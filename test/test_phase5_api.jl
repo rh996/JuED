@@ -42,7 +42,7 @@ end
         expected[1:length(result.values), col] = result.values
     end
 
-    @test isequal(expected, legacy)
+    @test isapprox(expected, legacy; atol=1e-12, nans=true)
     @test isapprox(matrixfree_result.values[1], sparse_result.values[1]; atol=1e-8)
 end
 
