@@ -45,6 +45,8 @@ rdm2_compact = RDM2(model, ground_vector, 0; representation=:compact)
 Backward-compatible wrappers such as `InputModel`, `DiagonalizeOneMomentum`, and
 `DiagonalizeAllMomentum` are still available, but the preferred public API is:
 
+- unified basis-space namespace:
+  `BasisSpaces`
 - explicit model constructors:
   `SpinlessListModel`, `SpinlessMomentumModel`, `SpinfulListModel`,
   `SpinfulMomentumModel`, `TwoBandModel`
@@ -78,6 +80,7 @@ not the canonical package test suite.
 
 - `src/JuED.jl`: package entrypoint
 - `src/EDMain.jl`: public ED API and compatibility wrappers
+- `src/BasisSpaces.jl`: canonical basis-space namespace and builders
 - `src/HamiltonianConstructor.jl`: sparse and matrix-free Hamiltonian builders
 - `src/DensityMatrices.jl`: RDM workspace and compact/dense RDM paths
 - `test/runtests.jl`: canonical package test runner

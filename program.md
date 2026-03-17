@@ -214,6 +214,24 @@ Completed in the current branch:
 35. Added CI for the maintained package suite.
    `.github/workflows/ci.yml` now runs `Pkg.instantiate()` and `Pkg.test()` on
    pushes and pull requests, using the canonical package test entry point.
+36. Finished the Phase 1 basis-space namespace cleanup.
+   `BasisSpaces.jl` now provides the canonical namespace for all Hilbert-space
+   types, shared momentum helpers, `build_hilbert!(...)`, and
+   `state_index_map(...)`, so callers no longer need to reach through the
+   individual low-level Hilbert-space modules.
+37. Separated the package-facing API from the internal implementation module.
+   `JuED.jl` now imports and exports the public API explicitly, exports
+   `BasisSpaces`, and no longer exports `EDMod` as part of the intended package
+   surface, while keeping `JuED.EDMod` accessible for compatibility.
+38. Standardized the Hilbert-space module exports and mutation behavior.
+   The internal Hilbert-space modules now export their primary type/builder
+   consistently, and `SpinHilbertSpace.BuildSpinHilbert(...)` now updates the
+   stored `hilbert` field like the other basis builders.
+39. Added package-level Phase 1 namespace regression coverage.
+   `tests/test_phase1_namespace.jl` checks the new `JuED.BasisSpaces` export,
+   verifies that `EDMod` is no longer exported from the package surface, and
+   exercises the unified basis builders and state-index mapping through the new
+   namespace.
 
 Still pending:
 
@@ -222,9 +240,7 @@ Still pending:
 2. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
    a more scalable on-disk format for large compact RDM objects and any later
    API ergonomics around those compact representations.
-3. Phase 1 namespace cleanup for basis-space types and clearer public/internal
-   module separation.
-4. Phase 7 benchmark and allocation work.
+3. Phase 7 benchmark and allocation work.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -266,13 +282,30 @@ Still pending:
 2. Consolidate repeated momentum utility functions into one shared utility
    module. Completed for the 1D/2D momentum helpers.
 3. Move all basis-space types into a single namespace with consistent exports.
+   Completed.
+   `BasisSpaces.jl` now provides the canonical basis-space namespace and
+   builders, and the maintained Hilbert-space tests target that namespace
+   instead of the individual implementation modules.
 4. Separate public entry points from internal implementation modules.
+   Completed for the current package surface.
+   `JuED.jl` now explicitly imports/exports the intended package API and
+   exports `BasisSpaces`, while the lower-level `EDMod` module remains
+   accessible but is no longer exported as part of the public package surface.
 
 ### Deliverables
 
-- No duplicate module names
-- One source of truth for momentum arithmetic
-- Clear internal vs public API boundaries
+- No duplicate module names. Completed.
+- One source of truth for momentum arithmetic. Completed.
+- Clear internal vs public API boundaries. Completed for the current package
+  surface.
+
+### Phase 1 Follow-Up
+
+Phase 1 is complete for the current namespace and package-boundary scope.
+The remaining related work now belongs to later phases:
+
+1. Broader ED API ergonomics belong to Phase 5.
+2. Performance-oriented benchmark and allocation work belongs to Phase 7.
 
 ## Phase 2: Basis Generation Unification
 

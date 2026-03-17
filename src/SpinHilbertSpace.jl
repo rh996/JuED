@@ -2,6 +2,8 @@
 
 module SpinHilbertSpaceMod
 
+export SpinHilbertSpace, BuildHilbert, BuildSpinHilbert
+
 using ..HilbertSpaceMod
 using ..BasisBuildersMod: build_particle_basis
 
@@ -37,6 +39,7 @@ function BuildSpinHilbert(hilbertspace::SpinHilbertSpace; use_cache::Bool=true)
         end
     end
 
+    hilbertspace.hilbert = h_tot
     return h_tot
 end
 

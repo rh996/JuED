@@ -1,6 +1,8 @@
 
 module SpinMomentumHilbertSpace1DMod
 
+export SpinMomentumHilbertSpace1D, BuildHilbert, BuildSpinHilbert, momentum_add_1d, momentum_sub_1d
+
 using ..HilbertSpaceMod
 using ..BasisBuildersMod: build_momentum_basis
 using ..IndexTypesMod: state_eltype
@@ -62,7 +64,5 @@ function BuildSpinHilbert(hilbertspace::SpinMomentumHilbertSpace1D; use_cache::B
     
     
 end
-
-export SpinMomentumHilbertSpace1D, momentum_add_1d, momentum_sub_1d
 
 end

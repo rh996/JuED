@@ -2,6 +2,7 @@ using Test
 using JuED
 
 @testset "JuED" begin
+    include("../tests/test_phase1_namespace.jl")
     include("../tests/test_refactor_hilbert_spaces.jl")
     include("../tests/test_hilbert_kspin1d.jl")
     include("../tests/test_fermion_operator.jl")

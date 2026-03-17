@@ -1,6 +1,6 @@
 module HilbertSpaceMod
 
-export AbstractHilbertSpace, ToDict
+export AbstractHilbertSpace, GeneralHilbertSpace, BuildHilbert, ToDict
 
 using ..BasisBuildersMod: build_particle_basis
 using ..IndexTypesMod: state_eltype

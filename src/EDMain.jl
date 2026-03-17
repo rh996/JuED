@@ -14,6 +14,7 @@ include("MomentumHilbertSpace2D.jl")
 include("MomentumHilbertSpace1D.jl")
 include("SpinHilbertSpace.jl")
 include("TwoBandMomentumHilbertSpace2D.jl")
+include("BasisSpaces.jl")
 include("HamiltonianConstructor.jl")
 include("DensityMatrices.jl")
 
@@ -21,18 +22,15 @@ export DiagonalizeOneMomentum, InputModel, InputTwoBandModel, DiagonalizeAllMome
 export SpinlessListModel, SpinlessMomentumModel, SpinfulListModel, SpinfulMomentumModel, TwoBandModel
 export SolverConfig, BuildSector, BuildOperator, SolveSector, SolveAllSectors
 export RDMWorkspace, CompactRDM2, CompactRDM3, RDM1, RDM2, RDM3, RDM2Compact, RDM3Compact, RDM2_cache, todense
+export BasisSpaces
 
 using .HamiltonianConstructorMod
 using .DensityMatricesMod
+const BasisSpaces = BasisSpacesMod
 
 using SparseArrays
 using KrylovKit
-using .MomentumHilbertSpace2DMod
-using .MomentumHilbertSpace1DMod
-using .SpinMomentumHilbertSpace2DMod
-using .SpinMomentumHilbertSpace1DMod
-using .SpinHilbertSpaceMod
-using .TwoBandMomentumHilbertSpace2DMod
+using .BasisSpacesMod
 using .IndexTypesMod: choose_state_type
 
 struct SolverConfig
@@ -93,29 +91,29 @@ InputTwoBandModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBo
 
 function BuildSector(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinless}, momentum::Int; use_cache::Bool=true)
     indtype = choose_state_type(_state_bits(model))
-    hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
-    MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace; use_cache)
+    hilbertspace = BasisSpaces.MomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
     return hilbertspace
 end
 
 function BuildSector(model::ModelParams2DSpinList, momentum::Int; use_cache::Bool=true)
     indtype = choose_state_type(_state_bits(model))
-    hilbertspace = SpinMomentumHilbertSpace2DMod.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
-    SpinMomentumHilbertSpace2DMod.BuildSpinHilbert(hilbertspace; use_cache)
+    hilbertspace = BasisSpaces.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
     return hilbertspace
 end
 
 function BuildSector(model::ModelParams2DSpin, momentum::Int; use_cache::Bool=true)
     indtype = choose_state_type(model.Nkx * model.Nky * 2)
-    hilbertspace = SpinMomentumHilbertSpace2DMod.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
-    SpinMomentumHilbertSpace2DMod.BuildSpinHilbert(hilbertspace; use_cache)
+    hilbertspace = BasisSpaces.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
     return hilbertspace
 end
 
 function BuildSector(model::ModelParams2DTwoBand, momentum::Int; use_cache::Bool=true)
     indtype = choose_state_type(_state_bits(model))
-    hilbertspace = TwoBandMomentumHilbertSpace2DMod.TwoBandMomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
-    TwoBandMomentumHilbertSpace2DMod.BuildTwoBandHilbert(hilbertspace; use_cache)
+    hilbertspace = BasisSpaces.TwoBandMomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
     return hilbertspace
 end
 

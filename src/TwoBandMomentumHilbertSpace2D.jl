@@ -1,5 +1,7 @@
 module TwoBandMomentumHilbertSpace2DMod
 
+export TwoBandMomentumHilbertSpace2D, BuildHilbert, BuildTwoBandHilbert
+
 using ..HilbertSpaceMod
 using ..BasisBuildersMod: build_momentum_basis
 using ..IndexTypesMod: state_eltype
