@@ -89,7 +89,9 @@ not the canonical package test suite.
 ## Repository Layout
 
 - `src/JuED.jl`: package entrypoint
-- `src/EDMain.jl`: public ED API and compatibility wrappers
+- `src/Internal.jl`: internal subsystem include graph
+- `src/PublicAPI.jl`: explicit package-facing ED/model API
+- `src/EDMain.jl`: compatibility facade for older `EDMod`-based code paths
 - `src/BasisSpaces.jl`: canonical basis-space namespace and builders
 - `src/HamiltonianConstructor.jl`: sparse and matrix-free Hamiltonian builders
 - `src/DensityMatrices.jl`: RDM workspace and compact/dense RDM paths

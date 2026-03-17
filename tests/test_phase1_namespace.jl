@@ -12,6 +12,8 @@ const BasisSpaces = Package.BasisSpaces
 @testset "Package exports BasisSpaces but not EDMod" begin
     @test :BasisSpaces in names(Package)
     @test !(:EDMod in names(Package))
+    @test isdefined(Package.EDMod, :PublicAPIMod)
+    @test isdefined(Package.EDMod, :InternalMod)
 end
 
 @testset "BasisSpaces provides a unified basis namespace" begin

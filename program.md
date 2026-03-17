@@ -252,11 +252,20 @@ Completed in the current branch:
    `benchmarks/TARGETS.md` records the maintained workload list plus current
    soft runtime/memory envelopes, and `CONTRIBUTING.md` now documents the
    canonical benchmark command and output files.
+44. Split the former `EDMain` monolith into explicit internal and public
+    modules.
+   `Internal.jl` now owns the subsystem include graph, `PublicAPI.jl` owns the
+   package-facing model/solver API, and `EDMain.jl` is now a compatibility
+   facade that re-exports those layers for older `EDMod` consumers.
+45. Added regression coverage for the new module split.
+   `tests/test_phase1_namespace.jl` now checks that the compatibility layer
+   exposes both `InternalMod` and `PublicAPIMod` while `JuED` continues to
+   export only the intended package-facing API.
 
 Still pending:
 
-1. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
-   repetition across the diagonalization entry points.
+1. Broader API ergonomics cleanup in the public solve/model layer, especially
+   reducing remaining repetition that now lives in `PublicAPI.jl`.
 2. Later API ergonomics around compact RDM-first workflows, especially if the
    project wants dense output to stop being the default for higher-body RDMs.
 3. Phase 7 performance tuning beyond the new benchmark/baseline harness.
