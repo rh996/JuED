@@ -98,4 +98,6 @@ not the canonical package test suite.
 
 ## Development
 
-See `CONTRIBUTING.md` for the expected development workflow.
+See `CONTRIBUTING.md` for the expected development workflow. The maintained
+benchmark harness lives at `benchmarks/runbenchmarks.jl`, with workload and
+envelope notes in `benchmarks/TARGETS.md`.

@@ -243,6 +243,15 @@ Completed in the current branch:
    save-load round-tripping, public package exports for the new helpers, model-
    level savefile wrappers, and metadata-mismatch failures for the persisted
    compact payloads.
+42. Started Phase 7 with a maintained `BenchmarkTools` suite.
+   `benchmarks/runbenchmarks.jl` now benchmarks the typed fermion kernel,
+   representative basis generation workloads, sparse Hamiltonian assembly,
+   sparse vs matrix-free eigensolves, and compact `RDM1`/`RDM2`/`RDM3`
+   workloads through one canonical runner.
+43. Added benchmark workload and envelope documentation.
+   `benchmarks/TARGETS.md` records the maintained workload list plus current
+   soft runtime/memory envelopes, and `CONTRIBUTING.md` now documents the
+   canonical benchmark command and output files.
 
 Still pending:
 
@@ -250,7 +259,7 @@ Still pending:
    repetition across the diagonalization entry points.
 2. Later API ergonomics around compact RDM-first workflows, especially if the
    project wants dense output to stop being the default for higher-body RDMs.
-3. Phase 7 benchmark and allocation work.
+3. Phase 7 performance tuning beyond the new benchmark/baseline harness.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -510,18 +519,39 @@ The remaining related work now belongs to later phases:
    - sparse eigensolve
    - matrix-free eigensolve
    - `RDM1`, `RDM2`, and `RDM3`
+   Completed for the maintained benchmark suite.
+   `benchmarks/runbenchmarks.jl` now covers the benchmark matrix above and
+   writes canonical summary files under `benchmarks/results/`.
 2. Profile allocations in the operator kernels and sparse assembly loops.
+   Completed for the baseline-reporting scope.
+   The maintained benchmark summary now records median allocated bytes and
+   allocation counts for the kernel, assembly, solve, and RDM workloads.
 3. Preallocate reusable thread-local workspaces for repeated operator
    applications.
 4. Replace repeated `Dict` lookups with denser indexing structures where sector
    ordering makes that possible.
 5. Define target problem sizes and record expected runtime and memory envelopes.
+   Completed for the maintained benchmark suite.
+   `benchmarks/TARGETS.md` records the canonical workloads and current soft
+   runtime/memory envelopes from the benchmark harness.
 
 ### Deliverables
 
-- Benchmark suite
-- Allocation profile baselines
-- Performance targets for future changes
+- Benchmark suite. Completed.
+- Allocation profile baselines. Completed for the maintained workloads.
+- Performance targets for future changes. Completed for the maintained
+  workloads.
+
+### Phase 7 Follow-Up
+
+Phase 7 is in progress.
+The benchmark/baseline infrastructure is now in place, and the remaining work
+is optimization-oriented:
+
+1. Preallocate reusable workspaces in the hottest operator/RDM loops.
+2. Reduce dictionary-lookup pressure where dense indexing is possible.
+3. Re-run the maintained benchmark harness after each optimization slice and
+   update `benchmarks/TARGETS.md` if the canonical envelopes move materially.
 
 ## Phase 8: Testing and Verification
 
