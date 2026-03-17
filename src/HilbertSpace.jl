@@ -2,6 +2,8 @@ module HilbertSpaceMod
 
 export AbstractHilbertSpace, ToDict
 
+using ..BasisBuildersMod: build_particle_basis
+
 abstract type AbstractHilbertSpace end
 
 mutable struct GeneralHilbertSpace{Ti}<:AbstractHilbertSpace
@@ -10,39 +12,10 @@ mutable struct GeneralHilbertSpace{Ti}<:AbstractHilbertSpace
     hilbert::Array{Ti,1}
 end
 
-
-function _dfs(ne::Int64,no::Int64,cache::Dict,hilbertspace::GeneralHilbertSpace)
-    if ne == 0
-        return [0]
-    end
-    if ne==no
-        a::Int64 = 0
-        for i in 1:no
-            a |= 1<<(i-1)
-        end
-        return [a]
-    end
-
-    key = (ne,no)
-    if haskey(cache,key)
-        return cache[key]
-    else
-
-        left = _dfs(ne,no-1,cache,hilbertspace)
-        right = _dfs(ne-1,no-1,cache,hilbertspace)
-        shifted_right = right .+ (1<<(no-1))
-        curr = vcat(left,shifted_right)
-
-        cache[key] = curr
-        return curr
-    end
-end
-
-function BuildHilbert(hilbertspace::GeneralHilbertSpace)
-    cache = Dict()
+function BuildHilbert(hilbertspace::GeneralHilbertSpace{Ti}) where {Ti}
     nparticle = hilbertspace.nparticle
     norbital = hilbertspace.norbital
-    hilbertspace.hilbert = _dfs(nparticle,norbital,cache,hilbertspace)
+    hilbertspace.hilbert = build_particle_basis(Ti, nparticle, norbital)
     return hilbertspace.hilbert
     
 end

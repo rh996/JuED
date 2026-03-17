@@ -3,6 +3,8 @@
 module SpinMomentumHilbertSpace2DMod
 
 using ..HilbertSpaceMod
+using ..BasisBuildersMod: build_momentum_basis
+using ..MomentumUtilsMod: momentum_add_2d, momentum_sub_2d
 
 mutable struct SpinMomentumHilbertSpace2D{Ti}<:AbstractHilbertSpace
     nalpha::Int64
@@ -13,72 +15,13 @@ mutable struct SpinMomentumHilbertSpace2D{Ti}<:AbstractHilbertSpace
     hilbert::Array{Ti,1}
 end
 
-
-@inline function momentum_add_2d(k1,k2,Nkx,Nky)
-    k1x = mod(k1,Nkx)
-    k1y = fld(k1,Nkx)
-    k2x = mod(k2,Nkx)
-    k2y = fld(k2,Nkx)
-    return mod((k1x+k2x),Nkx) + mod((k1y+k2y),Nky)*Nkx
-    
-end
-
-@inline function momentum_sub_2d(k1,k2,Nkx,Nky)
-    k1x = mod(k1,Nkx)
-    k1y = fld(k1,Nkx)
-    k2x = mod(k2,Nkx)
-    k2y = fld(k2,Nkx)
-    return mod((k1x-k2x),Nkx) + mod((k1y-k2y),Nky)*Nkx
-    
-end
-
-function _dfs(ne::Int64,no::Int64,k_curr::Int64,hilbertspace::SpinMomentumHilbertSpace2D)
-    Nkx = hilbertspace.Nkx
-    Nky = hilbertspace.Nky
-    systemsize = Nkx*Nky
-
-    if ne>no
-        return []
-    end
-    if ne==no
-        k_new = 0
-        for i in 0:no-1
-            k1 = (systemsize - 1-i)
-            k_new = momentum_add_2d(k_new,k1,Nkx,Nky)
-        end
-        if k_new == k_curr
-            a::Int64 = 0
-            for i in 1:ne
-                a |= 1<<((i-1)*2)
-            end
-            return [a]
-        else
-            return []
-        end
-    elseif ne==0
-        if k_curr == 0
-            return [0]
-        else
-            return []
-        end
-    else
-        kind = systemsize-no
-        k1 = k_curr
-        k2 = kind
-        k_new = momentum_sub_2d(k1,k2,Nkx,Nky)
-        
-        left = _dfs(ne,no-1,k_curr,hilbertspace)
-        right = _dfs(ne-1,no-1,k_new,hilbertspace)
-        shifted_right = right .+ (1<<((no-1)*2))
-        curr = vcat(left,shifted_right)
-        return curr
-    end
-end
-
 function BuildHilbert(nparticle,momentum,hilbertspace::SpinMomentumHilbertSpace2D)
     norbital = hilbertspace.Nkx*hilbertspace.Nky
     k = momentum
-    hilbert = _dfs(nparticle,norbital,k,hilbertspace)
+    Ti = typeof(hilbertspace.hilbert).parameters[1]
+    add_momentum = (k1, k2, systemsize) -> momentum_add_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
+    sub_momentum = (k1, k2, systemsize) -> momentum_sub_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
+    hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, add_momentum, sub_momentum; bitstep=2)
     return hilbert
     
 end
@@ -93,7 +36,8 @@ function BuildSpinHilbert(hilbertspace::SpinMomentumHilbertSpace2D)
     norbital = hilbertspace.Nkx*hilbertspace.Nky
     momentum = hilbertspace.momentum
 
-    result :: typeof(hilbertspace.hilbert)= []
+    Ti = typeof(hilbertspace.hilbert).parameters[1]
+    result = Vector{Ti}()
     for k1 in 0:norbital-1
         for k2 in 0:norbital-1
             k_tot = momentum_add_2d(k1,k2,Nkx,Nky)
@@ -103,7 +47,7 @@ function BuildSpinHilbert(hilbertspace::SpinMomentumHilbertSpace2D)
                 for i in eachindex(hilbert_beta)
                     hilbert_beta[i] = hilbert_beta[i] << 1
                 end
-                hilbert_tot = zeros(typeof(hilbertspace.hilbert).parameters[1],length(hilbert_alpha)*length(hilbert_beta))
+                hilbert_tot = zeros(Ti,length(hilbert_alpha)*length(hilbert_beta))
                 for i in eachindex(hilbert_alpha)
                     for j in eachindex(hilbert_beta)
                         hilbert_tot[(i-1)*length(hilbert_beta)+j] = hilbert_alpha[i] | hilbert_beta[j]

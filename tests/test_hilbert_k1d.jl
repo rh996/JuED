@@ -1,10 +1,10 @@
-include("../src/MomentumHilbertSpace1D.jl")
-using .MomentumHilbertSpace1DMod
+include("../src/EDMain.jl")
+using .EDMod
 
 
-hibertspace = MomentumHilbertSpace1DMod.MomentumHilbertSpace1D{Int64}(1, 6, 1, [])
+hibertspace = EDMod.MomentumHilbertSpace1DMod.MomentumHilbertSpace1D{Int64}(1, 6, 1, [])
 
-hilbert = MomentumHilbertSpace1DMod.BuildHilbert(hibertspace)
+hilbert = EDMod.MomentumHilbertSpace1DMod.BuildHilbert(hibertspace)
 
 
 println(length(hilbert))
@@ -12,4 +12,3 @@ println(hilbert)
 for i in eachindex(hilbert)
     println(bitstring(hilbert[i])[end-5:end])
 end
-

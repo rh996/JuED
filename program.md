@@ -76,6 +76,38 @@ large exact-diagonalization workloads it targets.
 The work should be done in phases. Earlier phases reduce structural risk.
 Later phases optimize the hot paths after the architecture is stable.
 
+## Progress Update
+
+Completed in the current branch:
+
+1. Resolved the duplicate 2D momentum module path.
+   `MomentumHilbertSpace2D_cache.jl` was removed and its memoized DFS logic was
+   folded into the canonical `MomentumHilbertSpace2D.jl`.
+2. Introduced a shared momentum utility module.
+   `MomentumUtils.jl` now provides the canonical 1D and 2D momentum addition and
+   subtraction helpers, and the basis modules import/re-export those functions.
+3. Introduced a shared basis-builder module.
+   `BasisBuilders.jl` now owns the generic particle-number DFS and the generic
+   momentum-constrained DFS used by the 1D, 2D, spinful, and two-band Hilbert
+   spaces.
+4. Tightened several weakly typed Hilbert-space accumulators.
+   The spinful and two-band basis combiners now initialize typed vectors instead
+   of starting from bare `[]`.
+5. Added a focused structured regression test.
+   `tests/test_refactor_hilbert_spaces.jl` verifies the shared momentum helpers
+   and checks that the refactored sector builders still partition the spinless,
+   spinful, and two-band Hilbert spaces correctly on small systems.
+6. Repaired the standalone 1D Hilbert-space test harness.
+   `tests/test_hilbert_k1d.jl` now loads through `EDMain.jl`, so its dependency
+   chain matches the actual module layout.
+
+Still pending from the early phases:
+
+1. Standard package metadata and a single canonical test runner.
+2. Full type normalization across basis states, dictionaries, and sparse matrix
+   data.
+4. Public/internal API separation and Hamiltonian-construction unification.
+
 ## Phase 0: Package and Repository Hygiene
 
 1. Add a standard `Project.toml` and package metadata.
@@ -94,14 +126,14 @@ Later phases optimize the hot paths after the architecture is stable.
 
 ## Phase 1: Module Boundary Cleanup
 
-1. Resolve the duplicate `MomentumHilbertSpace2DMod` definitions.
+1. Resolve the duplicate `MomentumHilbertSpace2DMod` definitions. Completed.
    Choose one implementation path:
    - keep a cached implementation as the default and delete the duplicate file,
      or
    - rename the cached variant to a distinct module and make the choice explicit
      in the API.
 2. Consolidate repeated momentum utility functions into one shared utility
-   module.
+   module. Completed for the 1D/2D momentum helpers.
 3. Move all basis-space types into a single namespace with consistent exports.
 4. Separate public entry points from internal implementation modules.
 
@@ -113,12 +145,13 @@ Later phases optimize the hot paths after the architecture is stable.
 
 ## Phase 2: Basis Generation Unification
 
-1. Introduce a shared basis-generation engine parameterized by:
+1. Introduce a shared basis-generation engine parameterized by: Completed.
    - orbital count
    - particle count
    - momentum constraint
    - bit layout strategy
-2. Replace the repeated DFS implementations in:
+2. Replace the repeated DFS implementations in: Largely completed for the
+   current Hilbert-space files.
    - `HilbertSpace.jl`
    - `MomentumHilbertSpace1D.jl`
    - `MomentumHilbertSpace2D.jl`
@@ -127,7 +160,9 @@ Later phases optimize the hot paths after the architecture is stable.
    - `SpinMomentumHilbertSpace2D.jl`
    - `TwoBandMomentumHilbertSpace2D.jl`
 3. Make caching a configurable feature of the basis builder instead of a
-   separate shadow implementation.
+   separate shadow implementation. Partially completed.
+   The shadow implementation was removed and memoization now lives in the shared
+   basis builder, but cache policy is not yet exposed as a public option.
 4. Introduce a dedicated state-index type alias and enforce the same type across
    Hilbert spaces, dictionaries, and sparse rows.
 
@@ -136,6 +171,15 @@ Later phases optimize the hot paths after the architecture is stable.
 - One generalized DFS basis builder
 - Explicit cache policy
 - Consistent state/index typing
+
+### Phase 2 Follow-Up
+
+1. Replace remaining type introspection patterns such as
+   `typeof(hilbertspace.hilbert).parameters[1]` with clearer typed helper APIs.
+2. Decide whether all basis builders should expose cached and uncached modes for
+   benchmarking and debugging.
+3. Extend the structured tests to cover exact basis contents, not only sector
+   partition counts.
 
 ## Phase 3: Fermion Operator Kernel Cleanup
 
@@ -272,8 +316,8 @@ will have to be repeated in several places.
 
 These are the highest-leverage changes to start with:
 
-1. Remove the duplicate 2D momentum module definitions.
-2. Standardize the package structure and test entry point.
+1. Remove the duplicate 2D momentum module definitions. Completed.
+2. Standardize the package structure and test entry point. In progress.
 3. Unify the DFS basis builders behind one generic implementation.
 4. Normalize integer and container types across basis states and sparse data.
 5. Extract shared Hamiltonian assembly scaffolding.
