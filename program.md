@@ -194,15 +194,37 @@ Completed in the current branch:
    sector solving vs legacy wrappers, all-sector iteration, matrix-free parity,
    two-band vector saving, and the explicit unsupported-path error for the
    spinful 6-index model family.
+31. Converted exploratory 1D spin-momentum basis inspection into a maintained
+    regression test.
+   `tests/test_hilbert_kspin1d.jl` now checks exact basis contents, fixed-spin
+   counts, per-state momentum labels, and full-sector partitioning in 1D.
+32. Converted the old density-matrix inspection script into maintained
+    assertions.
+   `tests/test_density_matrix.jl` now checks `RDM1` trace conservation, the
+   maintained `RDM2` contraction convention, and Hermiticity of `RDM1`/`RDM2`
+   on a deterministic small-sector state.
+33. Added focused physical-invariant regression tests.
+   `tests/test_physics_invariants.jl` checks that 2D spinless sector states
+   preserve particle number and total momentum, and that representative list
+   and momentum Hamiltonians are Hermitian on small sectors.
+34. Expanded the canonical package test runner.
+   `test/runtests.jl` now includes the 1D spinful Hilbert-space, density-matrix
+   invariant, and physics-invariant regression files in addition to the earlier
+   maintained suite.
+35. Added CI for the maintained package suite.
+   `.github/workflows/ci.yml` now runs `Pkg.instantiate()` and `Pkg.test()` on
+   pushes and pull requests, using the canonical package test entry point.
 
-Still pending from the early phases:
+Still pending:
 
-1. Standard package metadata and a single canonical test runner.
-2. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
+1. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
    repetition across the diagonalization entry points.
-3. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
+2. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
    a more scalable on-disk format for large compact RDM objects and any later
    API ergonomics around those compact representations.
+3. Phase 1 namespace cleanup for basis-space types and clearer public/internal
+   module separation.
+4. Phase 7 benchmark and allocation work.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -457,21 +479,38 @@ The remaining related work now belongs to later phases:
 
 ## Phase 8: Testing and Verification
 
-1. Convert the existing exploratory scripts into structured tests with assertions.
+1. Convert the existing exploratory scripts into structured tests with
+   assertions. Completed for the current maintained suite.
+   The old 1D spin-momentum basis inspection and density-matrix inspection
+   scripts were converted into maintained regression files with explicit
+   assertions and package-compatible loading.
 2. Add cross-checks between:
    - sparse Hamiltonian vs matrix-free action
    - cached vs uncached basis generation
    - optimized RDMs vs naive RDMs
    - old API outputs vs refactored API outputs on small systems
+   Completed for the current maintained suite.
 3. Add regression tests for hermiticity, particle-number conservation, and
-   momentum-sector consistency.
+   momentum-sector consistency. Completed for representative small sectors.
 4. Add CI for the test suite and, if runtime permits, a small benchmark smoke
-   test.
+   test. Completed for the test-suite CI path.
+   GitHub Actions now runs the canonical package suite. Benchmark smoke tests
+   remain better aligned with Phase 7 once the benchmark harness exists.
 
 ### Deliverables
 
-- Reproducible correctness coverage
-- Regression protection for future optimization work
+- Reproducible correctness coverage. Completed for the current maintained suite.
+- Regression protection for future optimization work. Completed for the current
+  maintained suite.
+
+### Phase 8 Follow-Up
+
+Phase 8 is complete for the current maintained test and CI scope.
+The remaining related work now belongs to later phases:
+
+1. Benchmark smoke tests belong to Phase 7.
+2. Additional exploratory model/data scripts can be promoted if they become
+   stable and dependency-light enough for the maintained suite.
 
 ## Recommended Execution Order
 
