@@ -145,14 +145,32 @@ Completed in the current branch:
    `tests/test_hamiltonian_action.jl` now checks that `HamiltonianAction(v)`
    matches `SparseMatrixCSC * v` and that sparse and matrix-free eigensolves
    agree on small 4-index and 6-index momentum-sector problems.
+20. Started Phase 6 by introducing a reusable RDM sector workspace.
+   `DensityMatrices.jl` now builds `RDMWorkspace(...)` objects for spinless and
+   two-band momentum sectors, and the public `RDM1`, `RDM2`, `RDM3`, and
+   `RDM2_cache` entry points are thin wrappers over that prepared workspace.
+21. Consolidated the repeated RDM-side operator application logic.
+   One shared transition helper now applies the fermionic operator strings used
+   by `RDM1`, `RDM2`, `RDM3`, the naive reference paths, and the `RDM2` cache
+   builder instead of each routine carrying its own operator sequence.
+22. Replaced ad hoc RDM tuple generation with reusable momentum filters.
+   Pair and triple momentum-conserving index generation now goes through shared
+   helpers parameterized by orbital-to-momentum mapping, covering both spinless
+   and two-band sectors.
+23. Added structured RDM regression coverage.
+   `tests/test_density_matrix_refactor.jl` checks workspace/public-wrapper
+   equivalence, cache round-tripping, optimized `RDM3` vs single-threaded
+   `RDM3`, and optimized-vs-naive agreement on representative independent RDM2
+   and RDM3 elements in small sectors.
 
 Still pending from the early phases:
 
 1. Standard package metadata and a single canonical test runner.
-2. RDM architecture cleanup beyond collection typing, especially eliminating
-   repeated Hilbert-space rebuilds and consolidating operator-application logic.
-3. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
+2. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
    repetition across the diagonalization entry points.
+3. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
+   better cache invalidation, sparse/symmetry-reduced high-body outputs, and
+   memory-scalable alternatives to dense `norb^4`/`norb^6` tensors.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -299,18 +317,29 @@ The remaining related work now belongs to later phases:
 
 ## Phase 6: Density Matrix Redesign
 
-1. Stop rebuilding Hilbert spaces inside every RDM call.
-   Accept a prepared sector object or cached workspace where possible.
+1. Stop rebuilding Hilbert spaces inside every RDM call. In progress.
+   `RDMWorkspace(...)` now prepares and reuses the sector basis, index map, and
+   momentum-filtered operator tuples, and the public `RDM*` entry points call
+   into that prepared workspace.
 2. Factor out the shared operator-application pattern used by `RDM1`, `RDM2`,
-   `RDM3`, and cache generation.
+   `RDM3`, and cache generation. In progress.
+   The duplicated fermion-operator loops were collapsed into shared transition
+   helpers, but the remaining state-type hardcoding in `FermionOperator.jl`
+   still belongs to the Phase 3/6 boundary.
 3. Replace ad hoc tuple-generation code with reusable momentum-filter utilities.
+   Completed for the current spinless and two-band 2D RDM paths.
 4. Make caching a structured subsystem with explicit filenames, schema versioning,
-   and invalidation rules.
+   and invalidation rules. In progress.
+   `RDM2_cache` now writes a versioned filename and metadata payload while still
+   loading the legacy cache layout for compatibility.
 5. Re-evaluate dense tensor outputs for `RDM2` and `RDM3`.
    For larger systems, expose sparse or symmetry-reduced representations to avoid
    allocating full `norb^4` and `norb^6` tensors when they are not needed.
 6. Add correctness tests that compare optimized RDM code to naive reference
-   implementations on small systems.
+   implementations on small systems. In progress.
+   The new regression suite covers workspace-vs-wrapper agreement, cache
+   round-tripping, threaded-vs-single-threaded `RDM3`, and optimized-vs-naive
+   checks on representative independent RDM2/RDM3 elements.
 
 ### Deliverables
 
