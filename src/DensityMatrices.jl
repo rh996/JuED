@@ -3,6 +3,7 @@ using ..FermionOperatorMod
 using ..ModelTypesMod
 using ..MomentumHilbertSpace2DMod
 using ..TwoBandMomentumHilbertSpace2DMod
+using ..IndexTypesMod: choose_state_type
 using JLD2
 export RDM1, RDM2, RDM3, RDM3_single_thread, RDM2_cache, RDM3_naive, RDM2_naive
 
@@ -10,11 +11,7 @@ function RDM1(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Array{T,
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
     norb = Nkx * Nky
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
     nparticle = ModelParams2DSpinless.nparticle
 
@@ -68,11 +65,7 @@ function RDM1(ModelParams::ModelParams2DTwoBand, coeffs::Array{T,1}, momentum::I
     Nkx = ModelParams.Nkx
     Nky = ModelParams.Nky
     norb = Nkx * Nky * 2
-    if norb > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(norb)
 
     nparticle = ModelParams.nparticle
 
@@ -126,11 +119,7 @@ function RDM2(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Array{T,
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
     norb = Nkx * Nky
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
     nparticle = ModelParams2DSpinless.nparticle
 
@@ -266,11 +255,7 @@ function RDM2_cache(ModelParams2DSpinless::ModelParams2DSpinlessList, momentum::
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
     norb = Nkx * Nky
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
     nparticle = ModelParams2DSpinless.nparticle
 
@@ -363,11 +348,7 @@ function RDM2(ModelParams::ModelParams2DTwoBand, coeffs::Array{T,1}, momentum::I
     Nky = ModelParams.Nky
 
     norb = Nkx * Nky * 2
-    if norb > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(norb)
 
     nparticle = ModelParams.nparticle
 
@@ -498,11 +479,7 @@ function RDM3(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Array{T,
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
     norb = Nkx * Nky
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
     nparticle = ModelParams2DSpinless.nparticle
 
@@ -634,11 +611,7 @@ function RDM3_single_thread(ModelParams2DSpinless::ModelParams2DSpinlessList, co
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
     norb = Nkx * Nky
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
     nparticle = ModelParams2DSpinless.nparticle
 
@@ -747,11 +720,7 @@ function RDM3_naive(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Ar
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
     norb = Nkx * Nky
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
     nparticle = ModelParams2DSpinless.nparticle
 
@@ -826,11 +795,7 @@ function RDM2_naive(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Ar
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
     norb = Nkx * Nky
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
     nparticle = ModelParams2DSpinless.nparticle
 

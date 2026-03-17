@@ -2,6 +2,7 @@ module TwoBandMomentumHilbertSpace2DMod
 
 using ..HilbertSpaceMod
 using ..BasisBuildersMod: build_momentum_basis
+using ..IndexTypesMod: state_eltype
 using ..MomentumUtilsMod: momentum_add_2d, momentum_sub_2d
 
 mutable struct TwoBandMomentumHilbertSpace2D{Ti}<:AbstractHilbertSpace
@@ -16,7 +17,7 @@ end
 function BuildHilbert(nparticle,momentum,hilbertspace::TwoBandMomentumHilbertSpace2D)
     norbital = hilbertspace.Nkx*hilbertspace.Nky
     k = momentum
-    Ti = typeof(hilbertspace.hilbert).parameters[1]
+    Ti = state_eltype(hilbertspace)
     add_momentum = (k1, k2, systemsize) -> momentum_add_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
     sub_momentum = (k1, k2, systemsize) -> momentum_sub_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
     hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, add_momentum, sub_momentum; bitstep=2)
@@ -30,7 +31,7 @@ function BuildTwoBandHilbert(hilbertspace::TwoBandMomentumHilbertSpace2D)
     Nky = hilbertspace.Nky
     norbital = hilbertspace.Nkx*hilbertspace.Nky
     momentum = hilbertspace.momentum
-    Ti = typeof(hilbertspace.hilbert).parameters[1]
+    Ti = state_eltype(hilbertspace)
     result = Vector{Ti}()
 
     for nalpha in 0:nparticle

@@ -8,6 +8,7 @@ export Hamiltonian_list_constructor, Hamiltonian_momentum_constructor
 using ProgressMeter
 using ..MomentumHilbertSpace2DMod
 using ..FermionOperatorMod
+using ..IndexTypesMod: choose_pointer_type
 using SparseArrays
 
 AbstractHilbertSpace = MomentumHilbertSpace2DMod.AbstractHilbertSpace
@@ -179,7 +180,8 @@ function Hamiltonian_momentum_constructor(OneBody, Eri::Array{T,6}, hilbertspace
     # 2) ------------------- Build indptr array via prefix sum of nnz_col --------------
     # By CSC convention, indptr has length = DimHilbert + 1,
     # with indptr[1] = 1, indptr[col+1] = indptr[col] + nnz_col[col].
-    indptr = Array{Int32}(undef, DimHilbert + 1)
+    pointertype = choose_pointer_type(sum(nnz_col) + 1)
+    indptr = Array{pointertype}(undef, DimHilbert + 1)
     indptr[1] = 1
     for col in 1:DimHilbert
         indptr[col+1] = indptr[col] + nnz_col[col]
@@ -188,8 +190,8 @@ function Hamiltonian_momentum_constructor(OneBody, Eri::Array{T,6}, hilbertspace
     total_nnz = indptr[end] - 1
     # If you want the same floating type as U, do `Array{typeof(U)}`:
     data = Array{T}(undef, total_nnz)
-    row = Array{Int32}(undef, total_nnz)
-    ind_dict = ToDict(hilbertspace)
+    row = Array{pointertype}(undef, total_nnz)
+    ind_dict = ToDict(hilbertspace, pointertype)
     # 3) ------------------- Second pass: fill in data[] and row[] in parallel ----------
     # We'll do the same chunk approach, but this time we know exactly where each
     # column's data belongs: starting at indptr[col].
@@ -224,7 +226,7 @@ function Hamiltonian_momentum_constructor(OneBody, Eri::Array{T,6}, hilbertspace
                 eps = OneBody[i, j]
 
                 data[writepos] = eps * fermion.fermion_sign
-                row[writepos] = Int32(ind_dict[fermion.state])
+                row[writepos] = ind_dict[fermion.state]
                 writepos += 1
             end
 
@@ -270,7 +272,7 @@ function Hamiltonian_momentum_constructor(OneBody, Eri::Array{T,6}, hilbertspace
                         iqy = fld(iq, Nkx)
 
                         data[writepos] = Eri[ikx+1, iky+1, ikpx+1, ikpy+1, iqx+1, iqy+1] * fermion.fermion_sign
-                        row[writepos] = Int32(ind_dict[fermion.state])
+                        row[writepos] = ind_dict[fermion.state]
                         writepos += 1
                     end
                 end
@@ -310,7 +312,7 @@ function Hamiltonian_list_constructor(OneBody, Eri::Array{T,4}, hilbertspace) wh
     chunk_size = ceil(Int, DimHilbert / nthreads_total)
 
     # We'll store the nonzeros-per-column here.
-    nnz_col = zeros(UInt32, DimHilbert)
+    nnz_col = zeros(Int, DimHilbert)
 
     # Optional progress bar, showing total columns processed
     p = Progress(DimHilbert, desc="Counting nnz_col")
@@ -386,11 +388,7 @@ function Hamiltonian_list_constructor(OneBody, Eri::Array{T,4}, hilbertspace) wh
     # By CSC convention, indptr has length = DimHilbert + 1,
     # with indptr[1] = 1, indptr[col+1] = indptr[col] + nnz_col[col].
     totaldata = sum(nnz_col)
-    if totaldata < Int64(typemax(UInt32))
-        pointertype = UInt32
-    else
-        pointertype = UInt64
-    end
+    pointertype = choose_pointer_type(totaldata + 1)
 
 
     indptr = Array{pointertype}(undef, DimHilbert + 1)
@@ -405,7 +403,7 @@ function Hamiltonian_list_constructor(OneBody, Eri::Array{T,4}, hilbertspace) wh
 
 
     row = Array{pointertype}(undef, total_nnz)
-    ind_dict = ToDict(hilbertspace)
+    ind_dict = ToDict(hilbertspace, pointertype)
     # 3) ------------------- Second pass: fill in data[] and row[] in parallel ----------
     # We'll do the same chunk approach, but this time we know exactly where each
     # column's data belongs: starting at indptr[col].
@@ -440,7 +438,7 @@ function Hamiltonian_list_constructor(OneBody, Eri::Array{T,4}, hilbertspace) wh
                 eps = OneBody[i, j]
 
                 data[writepos] = eps * fermion.fermion_sign
-                row[writepos] = Int32(ind_dict[fermion.state])
+                row[writepos] = ind_dict[fermion.state]
                 writepos += 1
             end
 
@@ -477,7 +475,7 @@ function Hamiltonian_list_constructor(OneBody, Eri::Array{T,4}, hilbertspace) wh
 
 
                 data[writepos] = Eri[i, j, k, l] * fermion.fermion_sign
-                row[writepos] = Int32(ind_dict[fermion.state])
+                row[writepos] = ind_dict[fermion.state]
                 writepos += 1
 
             end

@@ -3,6 +3,7 @@ module HilbertSpaceMod
 export AbstractHilbertSpace, ToDict
 
 using ..BasisBuildersMod: build_particle_basis
+using ..IndexTypesMod: state_eltype
 
 abstract type AbstractHilbertSpace end
 
@@ -20,10 +21,10 @@ function BuildHilbert(hilbertspace::GeneralHilbertSpace{Ti}) where {Ti}
     
 end
 
-function ToDict(hilbertspace::AbstractHilbertSpace)
-    dict = Dict()
+function ToDict(hilbertspace::AbstractHilbertSpace, ::Type{Tv}=Int) where {Tv<:Integer}
+    dict = Dict{state_eltype(hilbertspace),Tv}()
     for i in eachindex(hilbertspace.hilbert)
-        dict[hilbertspace.hilbert[i]] = i
+        dict[hilbertspace.hilbert[i]] = Tv(i)
     end
     return dict
     

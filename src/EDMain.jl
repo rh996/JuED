@@ -8,6 +8,7 @@ using .ModelTypesMod
 
 include("MomentumUtils.jl")
 include("BasisBuilders.jl")
+include("IndexTypes.jl")
 include("FermionOperator.jl")
 include("HilbertSpace.jl")
 include("SpinMomentumHilbertSpace2D.jl")
@@ -32,6 +33,7 @@ using .SpinMomentumHilbertSpace2DMod
 using .SpinMomentumHilbertSpace1DMod
 using .SpinHilbertSpaceMod
 using .TwoBandMomentumHilbertSpace2DMod
+using .IndexTypesMod: choose_state_type
 
 
 function InputModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T}
@@ -63,11 +65,7 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
     OneBody = ModelParams2DSpinless.OneBody
     TwoBody = ModelParams2DSpinless.TwoBody
 
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
 
     hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
@@ -103,11 +101,7 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
     OneBody = ModelParams2DSpinless.OneBody
     TwoBody = ModelParams2DSpinless.TwoBody
 
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
 
     hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
@@ -145,11 +139,7 @@ function DiagonalizeOneMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, mom
     OneBody = ModelParams2DSpin.OneBody
     TwoBody = ModelParams2DSpin.TwoBody
 
-    if Nkx * Nky * 2 > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky * 2)
 
 
     hilbertspace = SpinMomentumHilbertSpace2DMod.SpinMomentumHilbertSpace2D{indtype}(nalpha, nbeta, Nkx, Nky, momentum, [])
@@ -187,11 +177,7 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
     OneBody = ModelParams2DSpinless.OneBody
     TwoBody = ModelParams2DSpinless.TwoBody
 
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
 
     elist = []
@@ -208,7 +194,8 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
         end
         # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
 
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,Int32}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+        pointertype = typeof(row[1])
+        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
         # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
         push!(elist, vals[1:neigenv])
 
@@ -227,11 +214,7 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
     OneBody = ModelParams2DSpinless.OneBody
     TwoBody = ModelParams2DSpinless.TwoBody
 
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky)
 
 
 
@@ -278,11 +261,7 @@ function DiagonalizeAllMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, nei
     OneBody = ModelParams2DSpin.OneBody
     TwoBody = ModelParams2DSpin.TwoBody
 
-    if Nkx * Nky * 2 > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky * 2)
 
 
 
@@ -321,11 +300,7 @@ function DiagonalizeAllMomentum(ModelParams2DTwoBand::ModelParams2DTwoBand{T}, n
     OneBody = ModelParams2DTwoBand.OneBody
     TwoBody = ModelParams2DTwoBand.TwoBody
 
-    if Nkx * Nky * 2 > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
+    indtype = choose_state_type(Nkx * Nky * 2)
     elist = []
     mocoeffs = Dict()
     for k in 0:Nkx*Nky-1

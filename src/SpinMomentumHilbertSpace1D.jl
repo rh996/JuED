@@ -3,6 +3,7 @@ module SpinMomentumHilbertSpace1DMod
 
 using ..HilbertSpaceMod
 using ..BasisBuildersMod: build_momentum_basis
+using ..IndexTypesMod: state_eltype
 using ..MomentumUtilsMod: momentum_add_1d, momentum_sub_1d
 
 mutable struct SpinMomentumHilbertSpace1D{Ti}<:AbstractHilbertSpace
@@ -17,7 +18,7 @@ function BuildHilbert(nparticle,momentum,hilbertspace::SpinMomentumHilbertSpace1
     
     norbital = hilbertspace.norbital
     k = momentum
-    Ti = typeof(hilbertspace.hilbert).parameters[1]
+    Ti = state_eltype(hilbertspace)
     hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, momentum_add_1d, momentum_sub_1d; bitstep=2)
     return hilbert
     
@@ -29,7 +30,7 @@ function BuildSpinHilbert(hilbertspace::SpinMomentumHilbertSpace1D)
     norbital = hilbertspace.norbital
     momentum = hilbertspace.momentum
 
-    Ti = typeof(hilbertspace.hilbert).parameters[1]
+    Ti = state_eltype(hilbertspace)
     result = Vector{Ti}()
     for k1 in 0:norbital-1
         for k2 in 0:norbital-1

@@ -93,11 +93,15 @@ Completed in the current branch:
 4. Tightened several weakly typed Hilbert-space accumulators.
    The spinful and two-band basis combiners now initialize typed vectors instead
    of starting from bare `[]`.
-5. Added a focused structured regression test.
+5. Introduced explicit state and sparse-index helper utilities.
+   `IndexTypes.jl` now centralizes state-width selection and sparse pointer-width
+   selection, replacing repeated `if ... > 31` logic in the entry points and
+   removing the unsigned pointer split in sparse Hamiltonian assembly.
+6. Added a focused structured regression test.
    `tests/test_refactor_hilbert_spaces.jl` verifies the shared momentum helpers
    and checks that the refactored sector builders still partition the spinless,
    spinful, and two-band Hilbert spaces correctly on small systems.
-6. Repaired the standalone 1D Hilbert-space test harness.
+7. Repaired the standalone 1D Hilbert-space test harness.
    `tests/test_hilbert_k1d.jl` now loads through `EDMain.jl`, so its dependency
    chain matches the actual module layout.
 
@@ -106,6 +110,8 @@ Still pending from the early phases:
 1. Standard package metadata and a single canonical test runner.
 2. Full type normalization across basis states, dictionaries, and sparse matrix
    data.
+3. Conversion of remaining dynamic containers in dense/RDM helper code to
+   explicitly typed collections.
 4. Public/internal API separation and Hamiltonian-construction unification.
 
 ## Phase 0: Package and Repository Hygiene
@@ -164,7 +170,10 @@ Still pending from the early phases:
    The shadow implementation was removed and memoization now lives in the shared
    basis builder, but cache policy is not yet exposed as a public option.
 4. Introduce a dedicated state-index type alias and enforce the same type across
-   Hilbert spaces, dictionaries, and sparse rows.
+   Hilbert spaces, dictionaries, and sparse rows. Partially completed.
+   State-width and pointer-width selection now go through shared helpers, and
+   `ToDict` can build typed index maps, but the RDM/cache code still needs
+   broader collection-type cleanup.
 
 ### Deliverables
 
@@ -176,10 +185,13 @@ Still pending from the early phases:
 
 1. Replace remaining type introspection patterns such as
    `typeof(hilbertspace.hilbert).parameters[1]` with clearer typed helper APIs.
+   Completed for the current Hilbert-space builders.
 2. Decide whether all basis builders should expose cached and uncached modes for
    benchmarking and debugging.
 3. Extend the structured tests to cover exact basis contents, not only sector
    partition counts.
+4. Push the new explicit index-type helpers deeper into the RDM/cache code so
+   tuple caches and index collections no longer hardcode `Int32`.
 
 ## Phase 3: Fermion Operator Kernel Cleanup
 
