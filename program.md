@@ -261,11 +261,15 @@ Completed in the current branch:
    `tests/test_phase1_namespace.jl` now checks that the compatibility layer
    exposes both `InternalMod` and `PublicAPIMod` while `JuED` continues to
    export only the intended package-facing API.
+46. Reduced the remaining solve-layer API repetition in `PublicAPI.jl`.
+   Shared helpers now construct sector Hilbert spaces, sparse operators, and
+   the common `DiagonalizeAllMomentum(...)` flow instead of repeating the same
+   branching logic across the spinless, spinful, and two-band entry points.
 
 Still pending:
 
-1. Broader API ergonomics cleanup in the public solve/model layer, especially
-   reducing remaining repetition that now lives in `PublicAPI.jl`.
+1. Broader API ergonomics cleanup in the public solve/model layer beyond the
+   current deduplication pass.
 2. Later API ergonomics around compact RDM-first workflows, especially if the
    project wants dense output to stop being the default for higher-body RDMs.
 3. Phase 7 performance tuning beyond the new benchmark/baseline harness.

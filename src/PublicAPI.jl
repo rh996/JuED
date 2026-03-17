@@ -70,56 +70,46 @@ InputTwoBandModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBo
 
 @inline _sector_count(model) = model.Nkx * model.Nky
 @inline _model_value_type(model) = eltype(model.OneBody)
+@inline _operator_value_type(model) = eltype(model.OneBody)
 
 @inline _state_bits(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinless}) = model.Nkx * model.Nky
 @inline _state_bits(model::Union{ModelParams2DSpinList,ModelParams2DTwoBand}) = model.Nkx * model.Nky * 2
+@inline _state_bits(model::ModelParams2DSpin) = model.Nkx * model.Nky * 2
 
-function BuildSector(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinless}, momentum::Int; use_cache::Bool=true)
+@inline function _sector_hilbertspace(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinless}, momentum::Int, ::Type{Ti}) where {Ti}
+    return BasisSpaces.MomentumHilbertSpace2D{Ti}(model.nparticle, model.Nkx, model.Nky, momentum, Ti[])
+end
+
+@inline function _sector_hilbertspace(model::Union{ModelParams2DSpinList,ModelParams2DSpin}, momentum::Int, ::Type{Ti}) where {Ti}
+    return BasisSpaces.SpinMomentumHilbertSpace2D{Ti}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, Ti[])
+end
+
+@inline function _sector_hilbertspace(model::ModelParams2DTwoBand, momentum::Int, ::Type{Ti}) where {Ti}
+    return BasisSpaces.TwoBandMomentumHilbertSpace2D{Ti}(model.nparticle, model.Nkx, model.Nky, momentum, Ti[])
+end
+
+function BuildSector(model, momentum::Int; use_cache::Bool=true)
     indtype = choose_state_type(_state_bits(model))
-    hilbertspace = BasisSpaces.MomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
+    hilbertspace = _sector_hilbertspace(model, momentum, indtype)
     BasisSpaces.build_hilbert!(hilbertspace; use_cache)
     return hilbertspace
 end
 
-function BuildSector(model::ModelParams2DSpinList, momentum::Int; use_cache::Bool=true)
-    indtype = choose_state_type(_state_bits(model))
-    hilbertspace = BasisSpaces.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
-    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
-    return hilbertspace
-end
+@inline _hamiltonian_constructor(model::ModelParams2DSpinless) = InternalMod.HamiltonianConstructorMod.Hamiltonian_momentum_constructor
+@inline _hamiltonian_constructor(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinList,ModelParams2DTwoBand}) = InternalMod.HamiltonianConstructorMod.Hamiltonian_list_constructor
 
-function BuildSector(model::ModelParams2DSpin, momentum::Int; use_cache::Bool=true)
-    indtype = choose_state_type(model.Nkx * model.Nky * 2)
-    hilbertspace = BasisSpaces.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
-    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
-    return hilbertspace
-end
-
-function BuildSector(model::ModelParams2DTwoBand, momentum::Int; use_cache::Bool=true)
-    indtype = choose_state_type(_state_bits(model))
-    hilbertspace = BasisSpaces.TwoBandMomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
-    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
-    return hilbertspace
-end
-
-function BuildOperator(model::ModelParams2DSpinless, hilbertspace; matrixfree::Bool=false)
-    if matrixfree
-        return InternalMod.HamiltonianConstructorMod.HamiltonianAction(model.OneBody, model.TwoBody, hilbertspace)
-    end
-    data, row, indptr, dim = InternalMod.HamiltonianConstructorMod.Hamiltonian_momentum_constructor(model.OneBody, model.TwoBody, hilbertspace)
+function _sparse_operator_from_constructor(constructor, model, hilbertspace)
+    data, row, indptr, dim = constructor(model.OneBody, model.TwoBody, hilbertspace)
     pointertype = eltype(row)
-    operator = SparseMatrixCSC{eltype(model.OneBody),pointertype}(dim, dim, indptr, row, data)
+    operator = SparseMatrixCSC{_operator_value_type(model),pointertype}(dim, dim, indptr, row, data)
     return operator, dim
 end
 
-function BuildOperator(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinList,ModelParams2DTwoBand}, hilbertspace; matrixfree::Bool=false)
+function BuildOperator(model::Union{ModelParams2DSpinless,ModelParams2DSpinlessList,ModelParams2DSpinList,ModelParams2DTwoBand}, hilbertspace; matrixfree::Bool=false)
     if matrixfree
         return InternalMod.HamiltonianConstructorMod.HamiltonianAction(model.OneBody, model.TwoBody, hilbertspace)
     end
-    data, row, indptr, dim = InternalMod.HamiltonianConstructorMod.Hamiltonian_list_constructor(model.OneBody, model.TwoBody, hilbertspace)
-    pointertype = eltype(row)
-    operator = SparseMatrixCSC{eltype(model.OneBody),pointertype}(dim, dim, indptr, row, data)
-    return operator, dim
+    return _sparse_operator_from_constructor(_hamiltonian_constructor(model), model, hilbertspace)
 end
 
 function BuildOperator(model::ModelParams2DSpin, hilbertspace; matrixfree::Bool=false)
@@ -191,29 +181,27 @@ function DiagonalizeOneMomentum(model::Union{ModelParams2DSpinless,ModelParams2D
     return result.values, result.vectors
 end
 
+function _diagonalize_all_momentum(model, neigenv::Int; return_vectors::Int=0, save::Bool=false, matrixfree::Bool=false)
+    results = SolveAllSectors(model, SolverConfig(neigenv; return_vectors, matrixfree))
+    elist = _stack_sector_values(results, neigenv)
+    if save
+        return elist, _saved_vectors(results)
+    end
+    return elist
+end
+
 function DiagonalizeAllMomentum(model::Union{ModelParams2DSpinless,ModelParams2DSpinList}, neigenv::Int; matrixfree::Bool=false)
-    results = SolveAllSectors(model, SolverConfig(neigenv; return_vectors=0, matrixfree))
-    return _stack_sector_values(results, neigenv)
+    return _diagonalize_all_momentum(model, neigenv; return_vectors=0, matrixfree)
 end
 
 function DiagonalizeAllMomentum(model::ModelParams2DSpinlessList, neigenv::Int; numer_of_vectors::Int=3, save::Bool=false, matrixfree::Bool=false)
     return_vectors = save ? numer_of_vectors : 0
-    results = SolveAllSectors(model, SolverConfig(neigenv; return_vectors, matrixfree))
-    elist = _stack_sector_values(results, neigenv)
-    if save
-        return elist, _saved_vectors(results)
-    end
-    return elist
+    return _diagonalize_all_momentum(model, neigenv; return_vectors, save, matrixfree)
 end
 
 function DiagonalizeAllMomentum(model::ModelParams2DTwoBand, neigenv::Int; numer_of_vectors::Int=1, save::Bool=false, matrixfree::Bool=false)
     return_vectors = save ? numer_of_vectors : 0
-    results = SolveAllSectors(model, SolverConfig(neigenv; return_vectors, matrixfree))
-    elist = _stack_sector_values(results, neigenv)
-    if save
-        return elist, _saved_vectors(results)
-    end
-    return elist
+    return _diagonalize_all_momentum(model, neigenv; return_vectors, save, matrixfree)
 end
 
 end
