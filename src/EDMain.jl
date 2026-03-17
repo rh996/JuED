@@ -21,6 +21,7 @@ include("HamiltonianConstructor.jl")
 include("DensityMatrices.jl")
 
 export DiagonalizeOneMomentum, InputModel, DiagonalizeAllMomentum, HamiltonianAction
+export RDMWorkspace, CompactRDM2, CompactRDM3, RDM1, RDM2, RDM3, RDM2Compact, RDM3Compact, RDM2_cache, todense
 
 using .HamiltonianConstructorMod
 using .DensityMatricesMod

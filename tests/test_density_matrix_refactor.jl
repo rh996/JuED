@@ -68,10 +68,12 @@ end
     rdm1_model = EDMod.RDM1(model, coeffs, workspace.momentum)
     rdm2_workspace = EDMod.RDM2(workspace, coeffs)
     rdm2_compact = EDMod.RDM2Compact(workspace, coeffs)
+    rdm2_compact_public = EDMod.RDM2(workspace, coeffs; representation=:compact)
     rdm2_naive = EDMod.RDM2_naive(workspace, coeffs)
 
     @test isapprox(rdm1_workspace, rdm1_model; atol=1e-10)
     @test isapprox(rdm2_workspace, EDMod.todense(rdm2_compact); atol=1e-10)
+    @test isapprox(EDMod.todense(rdm2_compact_public), rdm2_workspace; atol=1e-10)
     @test length(rdm2_compact.elements) == length(workspace.rdm2_elements)
     for element in workspace.rdm2_elements
         i, j, k, l = element
@@ -85,8 +87,10 @@ end
         EDMod.RDM2_cache(workspace; file=cache_file)
         rdm2_compact_cached = EDMod.RDM2Compact(workspace, coeffs, cache_file)
         rdm2_cached = EDMod.RDM2(workspace, coeffs, cache_file)
+        rdm2_cached_public = EDMod.RDM2(workspace, coeffs, cache_file; representation=:compact)
         @test isapprox(EDMod.todense(rdm2_compact_cached), rdm2_workspace; atol=1e-10)
         @test isapprox(rdm2_workspace, rdm2_cached; atol=1e-10)
+        @test isapprox(EDMod.todense(rdm2_cached_public), rdm2_workspace; atol=1e-10)
 
         payload = load(cache_file)
         save(
@@ -117,10 +121,12 @@ end
 
     rdm3_threaded = EDMod.RDM3(workspace, coeffs)
     rdm3_compact = EDMod.RDM3Compact(workspace, coeffs)
+    rdm3_compact_public = EDMod.RDM3(workspace, coeffs; representation=:compact)
     rdm3_single = EDMod.RDM3_single_thread(workspace, coeffs)
     rdm3_naive = EDMod.RDM3_naive(workspace, coeffs)
 
     @test isapprox(rdm3_threaded, EDMod.todense(rdm3_compact); atol=1e-10)
+    @test isapprox(EDMod.todense(rdm3_compact_public), rdm3_threaded; atol=1e-10)
     @test length(rdm3_compact.elements) == length(workspace.rdm3_elements)
     @test isapprox(rdm3_threaded, rdm3_single; atol=1e-10)
     for element in workspace.rdm3_elements
@@ -141,5 +147,6 @@ end
 
     @test isapprox(EDMod.RDM1(workspace, coeffs), EDMod.RDM1(model, coeffs, workspace.momentum); atol=1e-10)
     @test isapprox(EDMod.RDM2(workspace, coeffs), EDMod.RDM2(model, coeffs, workspace.momentum); atol=1e-10)
+    @test isapprox(EDMod.todense(EDMod.RDM2(model, coeffs, workspace.momentum; representation=:compact)), EDMod.RDM2(workspace, coeffs); atol=1e-10)
     @test isapprox(EDMod.RDM2(workspace, coeffs), EDMod.todense(EDMod.RDM2Compact(workspace, coeffs)); atol=1e-10)
 end

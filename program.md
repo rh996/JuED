@@ -170,6 +170,10 @@ Completed in the current branch:
    Versioned `RDM2` cache files are now validated against model kind, lattice
    size, particle number, and momentum before use instead of being accepted
    blindly.
+26. Finished the Phase 6 public RDM surface.
+   `RDM2(...)` and `RDM3(...)` now support `representation=:dense` or
+   `representation=:compact`, and `EDMain.jl` exports the workspace, compact
+   RDM, and reconstruction APIs directly.
 
 Still pending from the early phases:
 
@@ -177,8 +181,8 @@ Still pending from the early phases:
 2. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
    repetition across the diagonalization entry points.
 3. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
-   the remaining dense-by-default behavior in the public `RDM2`/`RDM3` APIs and
-   a more scalable on-disk format for large compact RDM objects.
+   a more scalable on-disk format for large compact RDM objects and any later
+   typed-fermion cleanup that is shared with Phase 3.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -325,34 +329,46 @@ The remaining related work now belongs to later phases:
 
 ## Phase 6: Density Matrix Redesign
 
-1. Stop rebuilding Hilbert spaces inside every RDM call. In progress.
+1. Stop rebuilding Hilbert spaces inside every RDM call. Completed for the
+   current spinless and two-band 2D RDM paths.
    `RDMWorkspace(...)` now prepares and reuses the sector basis, index map, and
    momentum-filtered operator tuples, and the public `RDM*` entry points call
    into that prepared workspace.
 2. Factor out the shared operator-application pattern used by `RDM1`, `RDM2`,
-   `RDM3`, and cache generation. In progress.
+   `RDM3`, and cache generation. Completed for the current RDM subsystem.
    The duplicated fermion-operator loops were collapsed into shared transition
-   helpers, but the remaining state-type hardcoding in `FermionOperator.jl`
-   still belongs to the Phase 3/6 boundary.
+   helpers. The remaining typed-fermion work is now explicitly tracked under
+   Phase 3 rather than blocking the RDM redesign.
 3. Replace ad hoc tuple-generation code with reusable momentum-filter utilities.
    Completed for the current spinless and two-band 2D RDM paths.
 4. Make caching a structured subsystem with explicit filenames, schema versioning,
-   and invalidation rules. In progress.
+   and invalidation rules. Completed for `RDM2`.
    `RDM2_cache` now writes a versioned filename and metadata payload, validates
    metadata before loading, and still accepts the legacy cache layout for
    compatibility.
-5. Re-evaluate dense tensor outputs for `RDM2` and `RDM3`. In progress.
-   `RDM2Compact(...)` and `RDM3Compact(...)` now expose the symmetry-reduced
-   independent elements directly, while the existing dense `RDM2(...)` and
-   `RDM3(...)` methods are implemented as `todense(...)` over that compact data.
+5. Re-evaluate dense tensor outputs for `RDM2` and `RDM3`. Completed for the
+   current public API.
+   `RDM2(...)` and `RDM3(...)` now support `representation=:compact`, and the
+   dense methods are implemented as `todense(...)` over the compact symmetry-
+   reduced data.
    For larger systems, expose sparse or symmetry-reduced representations to avoid
    allocating full `norb^4` and `norb^6` tensors when they are not needed.
 6. Add correctness tests that compare optimized RDM code to naive reference
-   implementations on small systems. In progress.
+   implementations on small systems. Completed for the current RDM scope.
    The new regression suite covers workspace-vs-wrapper agreement, cache
    validation failure, compact-vs-dense reconstruction, cache round-tripping,
-   round-tripping, threaded-vs-single-threaded `RDM3`, and optimized-vs-naive
+   threaded-vs-single-threaded `RDM3`, public `representation=:compact`
+   coverage, and optimized-vs-naive
    checks on representative independent RDM2/RDM3 elements.
+
+### Phase 6 Follow-Up
+
+Phase 6 is complete for the current RDM architecture scope.
+The remaining related work now belongs to later phases:
+
+1. Typed fermion-state kernels remain in Phase 3.
+2. Larger benchmark and allocation work belongs to Phase 7.
+3. Broader API cleanup and naming ergonomics belong to Phase 5.
 
 ### Deliverables
 

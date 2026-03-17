@@ -287,6 +287,16 @@ function todense(rdm::CompactRDM3{T}) where {T}
     return _antisymmetrize_rdm3(dense)
 end
 
+function _rdm_representation(representation::Symbol, compact_value, dense_builder::Function)
+    if representation == :compact
+        return compact_value
+    elseif representation == :dense
+        return dense_builder()
+    else
+        throw(ArgumentError("Unsupported RDM representation $(representation). Use :dense or :compact."))
+    end
+end
+
 function RDM1(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
     _check_coefficients(workspace, coeffs)
     norb = workspace.norb
@@ -334,8 +344,9 @@ function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) w
     return CompactRDM2(workspace.norb, workspace.rdm2_elements, values)
 end
 
-function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
-    return todense(RDM2Compact(workspace, coeffs))
+function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}; representation::Symbol=:dense) where {T}
+    compact = RDM2Compact(workspace, coeffs)
+    return _rdm_representation(representation, compact, () -> todense(compact))
 end
 
 function _load_rdm2_cache_payload(file::String)
@@ -392,8 +403,9 @@ function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, f
     return CompactRDM2(workspace.norb, workspace.rdm2_elements, values)
 end
 
-function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, file::String) where {T}
-    return todense(RDM2Compact(workspace, coeffs, file))
+function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, file::String; representation::Symbol=:dense) where {T}
+    compact = RDM2Compact(workspace, coeffs, file)
+    return _rdm_representation(representation, compact, () -> todense(compact))
 end
 
 function rdm2_cache_filename(workspace::RDMSectorWorkspace; dir::String="./data")
@@ -438,12 +450,12 @@ function RDM2_cache(workspace::RDMSectorWorkspace; file::String=rdm2_cache_filen
     return file
 end
 
-function RDM2(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int, file::String) where {T}
-    return RDM2(RDMWorkspace(model, momentum), coeffs, file)
+function RDM2(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int, file::String; representation::Symbol=:dense) where {T}
+    return RDM2(RDMWorkspace(model, momentum), coeffs, file; representation)
 end
 
-function RDM2(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
-    return RDM2(RDMWorkspace(model, momentum), coeffs)
+function RDM2(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int; representation::Symbol=:dense) where {T}
+    return RDM2(RDMWorkspace(model, momentum), coeffs; representation)
 end
 
 function RDM2Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
@@ -466,8 +478,8 @@ function RDM1(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::
     return RDM1(RDMWorkspace(model, momentum), coeffs)
 end
 
-function RDM2(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::Int) where {T}
-    return RDM2(RDMWorkspace(model, momentum), coeffs)
+function RDM2(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::Int; representation::Symbol=:dense) where {T}
+    return RDM2(RDMWorkspace(model, momentum), coeffs; representation)
 end
 
 function RDM2Compact(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::Int) where {T}
@@ -503,12 +515,13 @@ function RDM3Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) w
     return CompactRDM3(workspace.norb, workspace.rdm3_elements, values)
 end
 
-function RDM3(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
-    return todense(RDM3Compact(workspace, coeffs))
+function RDM3(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}; representation::Symbol=:dense) where {T}
+    compact = RDM3Compact(workspace, coeffs)
+    return _rdm_representation(representation, compact, () -> todense(compact))
 end
 
-function RDM3(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
-    return RDM3(RDMWorkspace(model, momentum), coeffs)
+function RDM3(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int; representation::Symbol=:dense) where {T}
+    return RDM3(RDMWorkspace(model, momentum), coeffs; representation)
 end
 
 function RDM3Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
