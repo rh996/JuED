@@ -118,6 +118,16 @@ Completed in the current branch:
 11. Repaired the standalone 1D Hilbert-space test harness.
    `tests/test_hilbert_k1d.jl` now loads through `EDMain.jl`, so its dependency
    chain matches the actual module layout.
+12. Started Phase 4 by unifying the sparse CSC assembly scaffold.
+   `HamiltonianConstructor.jl` now uses one shared threaded two-pass CSC engine
+   for both the 4-index list constructor and the 6-index momentum constructor,
+   instead of duplicating the count/prefix/fill framework.
+13. Removed `ProgressMeter` calls from the Hamiltonian-constructor hot loops.
+   The constructor-level threaded loops no longer update progress bars while
+   counting/filling CSC data.
+14. Revalidated the refactored constructor path.
+   `tests/test_list_constructor.jl` and the Hilbert-space regression checks were
+   rerun after the constructor unification.
 
 Still pending from the early phases:
 
@@ -224,13 +234,18 @@ The remaining follow-up items now belong to later phases:
 ## Phase 4: Hamiltonian Construction Refactor
 
 1. Extract a generic sparse-column assembly engine with a model-specific callback
-   for generating connected states.
+   for generating connected states. In progress.
+   The threaded two-pass CSC assembly scaffold is now shared between the main
+   Hamiltonian constructors, with model-specific count/fill callbacks.
 2. Remove duplicated two-pass CSC construction logic between the 4-index and
-   6-index interaction paths.
+   6-index interaction paths. In progress.
+   The duplicated count/prefix/fill scaffolding has been removed, but the
+   operator-application kernels themselves are still duplicated across the
+   callback bodies.
 3. Precompute reusable operator index maps for momentum-conserving scattering
    channels.
 4. Remove `ProgressMeter` calls from hot threaded loops or gate them behind a
-   debug/performance flag.
+   debug/performance flag. Completed for the constructor hot loops.
 5. Audit integer conversions so `row`, `indptr`, and dictionary indices use one
    consistent type.
 6. Add a matrix-free Hamiltonian application path as a first-class API alongside
@@ -242,6 +257,15 @@ The remaining follow-up items now belong to later phases:
 - One Hamiltonian assembly framework
 - Optional matrix-free action for large sectors
 - Reduced allocation pressure in hot loops
+
+### Phase 4 Follow-Up
+
+1. Pull the repeated one-body/two-body operator kernels into smaller shared
+   helpers so the callbacks are thinner.
+2. Precompute or cache scattering-channel index maps for the 6-index momentum
+   interaction path.
+3. Decide whether the constructor scaffold should optionally support matrix-free
+   actions or remain strictly CSC-focused.
 
 ## Phase 5: Public API Simplification
 
