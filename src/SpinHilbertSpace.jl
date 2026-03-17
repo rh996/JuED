@@ -12,18 +12,18 @@ mutable struct SpinHilbertSpace<:AbstractHilbertSpace
     hilbert::Array{Int64,1}
 end
 
-function BuildHilbert(nparticle,hilbertspace::SpinHilbertSpace)
+function BuildHilbert(nparticle,hilbertspace::SpinHilbertSpace; use_cache::Bool=true)
     norbital = hilbertspace.norbital
-    hilbertspace.hilbert = build_particle_basis(Int64, nparticle, norbital; bitstep=2)
+    hilbertspace.hilbert = build_particle_basis(Int64, nparticle, norbital; bitstep=2, use_cache)
     return hilbertspace.hilbert
     
 end
 
-function BuildSpinHilbert(hilbertspace::SpinHilbertSpace)
+function BuildSpinHilbert(hilbertspace::SpinHilbertSpace; use_cache::Bool=true)
     nalpha = hilbertspace.nalpha
     nbeta = hilbertspace.nbeta
-    halpha = BuildHilbert(nalpha,hilbertspace)
-    hbeta = BuildHilbert(nbeta,hilbertspace)
+    halpha = BuildHilbert(nalpha,hilbertspace; use_cache)
+    hbeta = BuildHilbert(nbeta,hilbertspace; use_cache)
 
     for i in eachindex(hbeta)
         hbeta[i] = hbeta[i] << 1

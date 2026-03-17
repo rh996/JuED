@@ -13,10 +13,10 @@ mutable struct GeneralHilbertSpace{Ti}<:AbstractHilbertSpace
     hilbert::Array{Ti,1}
 end
 
-function BuildHilbert(hilbertspace::GeneralHilbertSpace{Ti}) where {Ti}
+function BuildHilbert(hilbertspace::GeneralHilbertSpace{Ti}; use_cache::Bool=true) where {Ti}
     nparticle = hilbertspace.nparticle
     norbital = hilbertspace.norbital
-    hilbertspace.hilbert = build_particle_basis(Ti, nparticle, norbital)
+    hilbertspace.hilbert = build_particle_basis(Ti, nparticle, norbital; use_cache)
     return hilbertspace.hilbert
     
 end

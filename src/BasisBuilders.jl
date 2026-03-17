@@ -10,7 +10,7 @@ function _filled_state(::Type{Ti}, no::Int, bitstep::Int) where {Ti<:Integer}
     return state
 end
 
-function _particle_dfs(::Type{Ti}, ne::Int, no::Int, bitstep::Int, cache::Dict{Tuple{Int,Int},Vector{Ti}}) where {Ti<:Integer}
+function _particle_dfs(::Type{Ti}, ne::Int, no::Int, bitstep::Int, cache::Union{Nothing,Dict{Tuple{Int,Int},Vector{Ti}}}) where {Ti<:Integer}
     if ne == 0
         return Ti[0]
     end
@@ -19,7 +19,7 @@ function _particle_dfs(::Type{Ti}, ne::Int, no::Int, bitstep::Int, cache::Dict{T
     end
 
     key = (ne, no)
-    if haskey(cache, key)
+    if cache !== nothing && haskey(cache, key)
         return cache[key]
     end
 
@@ -27,12 +27,14 @@ function _particle_dfs(::Type{Ti}, ne::Int, no::Int, bitstep::Int, cache::Dict{T
     right = _particle_dfs(Ti, ne - 1, no - 1, bitstep, cache)
     shifted_right = right .+ (one(Ti) << ((no - 1) * bitstep))
     curr = vcat(left, shifted_right)
-    cache[key] = curr
+    if cache !== nothing
+        cache[key] = curr
+    end
     return curr
 end
 
-function build_particle_basis(::Type{Ti}, ne::Int, no::Int; bitstep::Int=1) where {Ti<:Integer}
-    cache = Dict{Tuple{Int,Int},Vector{Ti}}()
+function build_particle_basis(::Type{Ti}, ne::Int, no::Int; bitstep::Int=1, use_cache::Bool=true) where {Ti<:Integer}
+    cache = use_cache ? Dict{Tuple{Int,Int},Vector{Ti}}() : nothing
     return _particle_dfs(Ti, ne, no, bitstep, cache)
 end
 
@@ -45,7 +47,7 @@ function _momentum_dfs(
     add_momentum,
     sub_momentum,
     bitstep::Int,
-    cache::Dict{NTuple{3,Int},Vector{Ti}},
+    cache::Union{Nothing,Dict{NTuple{3,Int},Vector{Ti}}},
 ) where {Ti<:Integer}
     if ne > no
         return Vector{Ti}()
@@ -68,7 +70,7 @@ function _momentum_dfs(
     end
 
     key = (ne, no, k_curr)
-    if haskey(cache, key)
+    if cache !== nothing && haskey(cache, key)
         return cache[key]
     end
 
@@ -77,12 +79,14 @@ function _momentum_dfs(
     right = _momentum_dfs(Ti, ne - 1, no - 1, k_new, systemsize, add_momentum, sub_momentum, bitstep, cache)
     shifted_right = right .+ (one(Ti) << ((no - 1) * bitstep))
     curr = vcat(left, shifted_right)
-    cache[key] = curr
+    if cache !== nothing
+        cache[key] = curr
+    end
     return curr
 end
 
-function build_momentum_basis(::Type{Ti}, ne::Int, no::Int, k::Int, systemsize::Int, add_momentum, sub_momentum; bitstep::Int=1) where {Ti<:Integer}
-    cache = Dict{NTuple{3,Int},Vector{Ti}}()
+function build_momentum_basis(::Type{Ti}, ne::Int, no::Int, k::Int, systemsize::Int, add_momentum, sub_momentum; bitstep::Int=1, use_cache::Bool=true) where {Ti<:Integer}
+    cache = use_cache ? Dict{NTuple{3,Int},Vector{Ti}}() : nothing
     return _momentum_dfs(Ti, ne, no, k, systemsize, add_momentum, sub_momentum, bitstep, cache)
 end
 

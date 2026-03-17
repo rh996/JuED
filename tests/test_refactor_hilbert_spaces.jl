@@ -24,6 +24,14 @@ end
     @test sum(dims) == binomial(Nkx * Nky, nparticle)
 end
 
+@testset "Momentum basis cache policy preserves exact contents" begin
+    hilbertspace = EDMod.MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{Int32}(2, 2, 2, 1, [])
+    cached = EDMod.MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace; use_cache=true)
+    uncached = EDMod.MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace; use_cache=false)
+    @test cached == uncached
+    @test cached == Int32[3, 12]
+end
+
 @testset "2D spin-momentum sectors partition the fixed-spin Hilbert space" begin
     nalpha = 1
     nbeta = 1
@@ -35,6 +43,14 @@ end
         push!(dims, length(EDMod.SpinMomentumHilbertSpace2DMod.BuildSpinHilbert(hilbertspace)))
     end
     @test sum(dims) == binomial(Nkx * Nky, nalpha) * binomial(Nkx * Nky, nbeta)
+end
+
+@testset "Spin Hilbert builder respects cache policy" begin
+    spin_hilbertspace = EDMod.SpinHilbertSpaceMod.SpinHilbertSpace(1, 1, 2, [])
+    cached = EDMod.SpinHilbertSpaceMod.BuildSpinHilbert(spin_hilbertspace; use_cache=true)
+    uncached = EDMod.SpinHilbertSpaceMod.BuildSpinHilbert(spin_hilbertspace; use_cache=false)
+    @test cached == uncached
+    @test cached == Int64[3, 9, 6, 12]
 end
 
 @testset "2D two-band sectors partition the full Hilbert space" begin

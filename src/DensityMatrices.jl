@@ -3,9 +3,87 @@ using ..FermionOperatorMod
 using ..ModelTypesMod
 using ..MomentumHilbertSpace2DMod
 using ..TwoBandMomentumHilbertSpace2DMod
-using ..IndexTypesMod: choose_state_type
+using ..IndexTypesMod: choose_pointer_type, choose_state_type
 using JLD2
 export RDM1, RDM2, RDM3, RDM3_single_thread, RDM2_cache, RDM3_naive, RDM2_naive
+
+const PairTuple = NTuple{2,Int}
+const TripleTuple = NTuple{3,Int}
+const QuadTuple = NTuple{4,Int}
+const SextTuple = NTuple{6,Int}
+
+function orbital_pairs(norb::Int)
+    pairs = Vector{PairTuple}()
+    sizehint!(pairs, binomial(norb, 2))
+    for i in 1:norb
+        for j in (i + 1):norb
+            push!(pairs, (i, j))
+        end
+    end
+    return pairs
+end
+
+function orbital_triples(norb::Int)
+    triples = Vector{TripleTuple}()
+    sizehint!(triples, binomial(norb, 3))
+    for i in 1:norb
+        for j in (i + 1):norb
+            for k in (j + 1):norb
+                push!(triples, (i, j, k))
+            end
+        end
+    end
+    return triples
+end
+
+function momentum_conserving_rdm2_elements(pairs::Vector{PairTuple}, Nkx::Int, Nky::Int)
+    independent_elements = Vector{QuadTuple}()
+    number_of_pairs = length(pairs)
+    for ind in eachindex(pairs)
+        i, j = pairs[ind]
+        for ind2 in ind:number_of_pairs
+            k, l = pairs[ind2]
+            if momentum_add_2d(i - 1, j - 1, Nkx, Nky) == momentum_add_2d(l - 1, k - 1, Nkx, Nky)
+                push!(independent_elements, (i, j, k, l))
+            end
+        end
+    end
+    return independent_elements
+end
+
+function momentum_conserving_rdm2_elements_twoband(pairs::Vector{PairTuple}, Nkx::Int, Nky::Int)
+    independent_elements = Vector{QuadTuple}()
+    number_of_pairs = length(pairs)
+    for ind in eachindex(pairs)
+        i, j = pairs[ind]
+        for ind2 in ind:number_of_pairs
+            k, l = pairs[ind2]
+            if momentum_add_2d(fld(i - 1, 2), fld(j - 1, 2), Nkx, Nky) == momentum_add_2d(fld(l - 1, 2), fld(k - 1, 2), Nkx, Nky)
+                push!(independent_elements, (i, j, k, l))
+            end
+        end
+    end
+    return independent_elements
+end
+
+function momentum_conserving_rdm3_elements(triples::Vector{TripleTuple}, Nkx::Int, Nky::Int)
+    independent_elements = Vector{SextTuple}()
+    number_of_triples = length(triples)
+    for ind1 in eachindex(triples)
+        i, j, k = triples[ind1]
+        for ind2 in ind1:number_of_triples
+            l, m, n = triples[ind2]
+            k1 = momentum_add_2d(i - 1, j - 1, Nkx, Nky)
+            k1 = momentum_add_2d(k1, k - 1, Nkx, Nky)
+            k2 = momentum_add_2d(l - 1, m - 1, Nkx, Nky)
+            k2 = momentum_add_2d(n - 1, k2, Nkx, Nky)
+            if k1 == k2
+                push!(independent_elements, (i, j, k, l, m, n))
+            end
+        end
+    end
+    return independent_elements
+end
 
 function RDM1(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Array{T,1}, momentum::Int) where {T}
     Nkx = ModelParams2DSpinless.Nkx
@@ -126,26 +204,8 @@ function RDM2(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Array{T,
     hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
     hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
     ind_dict = MomentumHilbertSpace2DMod.ToDict(hilbertspace)
-    pairs = []
-
-    for i in 1:norb
-        for j in i+1:norb
-            push!(pairs, (i, j))
-        end
-    end
-
-    independent_elements = []
-    number_of_pairs = length(pairs)
-
-    for ind in eachindex(pairs)
-        i, j = pairs[ind]
-        for ind2 in ind:number_of_pairs
-            k, l = pairs[ind2]
-            if momentum_add_2d(i - 1, j - 1, Nkx, Nky) == momentum_add_2d(l - 1, k - 1, Nkx, Nky)
-                push!(independent_elements, (i, j, k, l))
-            end
-        end
-    end
+    pairs = orbital_pairs(norb)
+    independent_elements = momentum_conserving_rdm2_elements(pairs, Nkx, Nky)
 
     # @show independent_elements
     # @show length(independent_elements)
@@ -262,36 +322,16 @@ function RDM2_cache(ModelParams2DSpinless::ModelParams2DSpinlessList, momentum::
     hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
     hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
     ind_dict = MomentumHilbertSpace2DMod.ToDict(hilbertspace)
-    pairs = []
-
-    for i in 1:norb
-        for j in i+1:norb
-            push!(pairs, (i, j))
-        end
-    end
-
-    independent_elements = []
-    number_of_pairs = length(pairs)
-
-    for ind in eachindex(pairs)
-        i, j = pairs[ind]
-        for ind2 in ind:number_of_pairs
-            k, l = pairs[ind2]
-            if momentum_add_2d(i - 1, j - 1, Nkx, Nky) == momentum_add_2d(l - 1, k - 1, Nkx, Nky)
-                push!(independent_elements, (i, j, k, l))
-            end
-
-        end
-    end
-
-
-
-
-    ijkl_cache = Dict{NTuple{5,Int32}}{NTuple{2,Int32}}()
+    pairs = orbital_pairs(norb)
+    independent_elements = momentum_conserving_rdm2_elements(pairs, Nkx, Nky)
+    pointertype = choose_pointer_type(length(hilbert))
+    cache_key_type = NTuple{5,pointertype}
+    cache_value_type = Tuple{pointertype,Int8}
+    ijkl_cache = Dict{cache_key_type,cache_value_type}()
 
 
     # Create a thread-local dictionary for each thread.
-    thread_cache = [Dict{NTuple{5,Int32},NTuple{2,Int32}}() for _ in 1:Threads.nthreads()]
+    thread_cache = [Dict{cache_key_type,cache_value_type}() for _ in 1:Threads.nthreads()]
 
     Threads.@threads for m in eachindex(hilbert)
         tid = Threads.threadid()
@@ -331,7 +371,7 @@ function RDM2_cache(ModelParams2DSpinless::ModelParams2DSpinlessList, momentum::
             left = ind_dict[fermion.state]
 
 
-            local_cache[(i, j, k, l, m)] = (left, fermion.fermion_sign)
+            local_cache[(pointertype(i), pointertype(j), pointertype(k), pointertype(l), pointertype(m))] = (pointertype(left), Int8(fermion.fermion_sign))
         end
     end
 
@@ -355,27 +395,8 @@ function RDM2(ModelParams::ModelParams2DTwoBand, coeffs::Array{T,1}, momentum::I
     hilbertspace = TwoBandMomentumHilbertSpace2DMod.TwoBandMomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
     hilbert = TwoBandMomentumHilbertSpace2DMod.BuildTwoBandHilbert(hilbertspace)
     ind_dict = TwoBandMomentumHilbertSpace2DMod.ToDict(hilbertspace)
-    pairs = []
-
-    for i in 1:norb
-        for j in i+1:norb
-            push!(pairs, (i, j))
-        end
-    end
-
-    independent_elements = []
-    number_of_pairs = length(pairs)
-
-    for ind in eachindex(pairs)
-        i, j = pairs[ind]
-        for ind2 in ind:number_of_pairs
-            k, l = pairs[ind2]
-            if momentum_add_2d(fld(i - 1, 2), fld(j - 1, 2), Nkx, Nky) == momentum_add_2d(fld(l - 1, 2), fld(k - 1, 2), Nkx, Nky)
-                push!(independent_elements, (i, j, k, l))
-            end
-            # push!(independent_elements, (i,j,k,l))
-        end
-    end
+    pairs = orbital_pairs(norb)
+    independent_elements = momentum_conserving_rdm2_elements_twoband(pairs, Nkx, Nky)
 
     # @show independent_elements
     @show length(independent_elements)
@@ -489,30 +510,8 @@ function RDM3(ModelParams2DSpinless::ModelParams2DSpinlessList, coeffs::Array{T,
 
 
     # Generate all unique triples (i, j, k) with i < j < k
-    triples = []
-    for i in 1:norb
-        for j in i+1:norb
-            for k in j+1:norb
-                push!(triples, (i, j, k))
-            end
-        end
-    end
-
-    independent_elements = []
-    number_of_triples = length(triples)
-    for ind1 in 1:number_of_triples
-        i, j, k = triples[ind1]
-        for ind2 in ind1:number_of_triples
-            l, m, n = triples[ind2]
-            k1 = momentum_add_2d(i - 1, j - 1, Nkx, Nky)
-            k1 = momentum_add_2d(k1, k - 1, Nkx, Nky)
-            k2 = momentum_add_2d(l - 1, m - 1, Nkx, Nky)
-            k2 = momentum_add_2d(n - 1, k2, Nkx, Nky)
-            if k1 == k2
-                push!(independent_elements, (i, j, k, l, m, n))
-            end
-        end
-    end
+    triples = orbital_triples(norb)
+    independent_elements = momentum_conserving_rdm3_elements(triples, Nkx, Nky)
 
 
     @show length(independent_elements)
@@ -620,18 +619,10 @@ function RDM3_single_thread(ModelParams2DSpinless::ModelParams2DSpinlessList, co
     ind_dict = MomentumHilbertSpace2DMod.ToDict(hilbertspace)
 
     # Generate all unique triples (i, j, k) with i < j < k
-    triples = []
-    for i in 1:norb
-        for j in i+1:norb
-            for k in j+1:norb
-                push!(triples, (i, j, k))
-            end
-        end
-    end
-
-    independent_elements = []
+    triples = orbital_triples(norb)
+    independent_elements = Vector{SextTuple}()
     number_of_triples = length(triples)
-    for ind1 in 1:number_of_triples
+    for ind1 in eachindex(triples)
         i, j, k = triples[ind1]
         for ind2 in ind1:number_of_triples
             l, m, n = triples[ind2]

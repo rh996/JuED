@@ -16,11 +16,11 @@ mutable struct MomentumHilbertSpace1D{Ti}<:AbstractHilbertSpace
     hilbert::Array{Ti,1}
 end
 
-function BuildHilbert(hilbertspace::MomentumHilbertSpace1D{Ti}) where {Ti}
+function BuildHilbert(hilbertspace::MomentumHilbertSpace1D{Ti}; use_cache::Bool=true) where {Ti}
     nparticle = hilbertspace.nparticle
     norbital = hilbertspace.norbital
     k = hilbertspace.momentum
-    hilbertspace.hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, momentum_add_1d, momentum_sub_1d)
+    hilbertspace.hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, momentum_add_1d, momentum_sub_1d; use_cache)
     return hilbertspace.hilbert
     
 end

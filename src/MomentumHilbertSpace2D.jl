@@ -16,13 +16,13 @@ mutable struct MomentumHilbertSpace2D{Ti}<:AbstractHilbertSpace
     hilbert::Array{Ti,1}
 end
 
-function BuildHilbert(hilbertspace::MomentumHilbertSpace2D{Ti}) where {Ti}
+function BuildHilbert(hilbertspace::MomentumHilbertSpace2D{Ti}; use_cache::Bool=true) where {Ti}
     nparticle = hilbertspace.nparticle
     norbital = hilbertspace.Nkx*hilbertspace.Nky
     k = hilbertspace.momentum
     add_momentum = (k1, k2, systemsize) -> momentum_add_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
     sub_momentum = (k1, k2, systemsize) -> momentum_sub_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
-    hilbertspace.hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, add_momentum, sub_momentum)
+    hilbertspace.hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, add_momentum, sub_momentum; use_cache)
     return hilbertspace.hilbert
     
 end

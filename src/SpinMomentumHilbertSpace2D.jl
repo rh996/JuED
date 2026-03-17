@@ -16,20 +16,20 @@ mutable struct SpinMomentumHilbertSpace2D{Ti}<:AbstractHilbertSpace
     hilbert::Array{Ti,1}
 end
 
-function BuildHilbert(nparticle,momentum,hilbertspace::SpinMomentumHilbertSpace2D)
+function BuildHilbert(nparticle,momentum,hilbertspace::SpinMomentumHilbertSpace2D; use_cache::Bool=true)
     norbital = hilbertspace.Nkx*hilbertspace.Nky
     k = momentum
     Ti = state_eltype(hilbertspace)
     add_momentum = (k1, k2, systemsize) -> momentum_add_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
     sub_momentum = (k1, k2, systemsize) -> momentum_sub_2d(k1, k2, hilbertspace.Nkx, hilbertspace.Nky)
-    hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, add_momentum, sub_momentum; bitstep=2)
+    hilbert = build_momentum_basis(Ti, nparticle, norbital, k, norbital, add_momentum, sub_momentum; bitstep=2, use_cache)
     return hilbert
     
 end
 
 
 
-function BuildSpinHilbert(hilbertspace::SpinMomentumHilbertSpace2D)
+function BuildSpinHilbert(hilbertspace::SpinMomentumHilbertSpace2D; use_cache::Bool=true)
     nalpha = hilbertspace.nalpha
     nbeta = hilbertspace.nbeta
     Nkx = hilbertspace.Nkx
@@ -43,8 +43,8 @@ function BuildSpinHilbert(hilbertspace::SpinMomentumHilbertSpace2D)
         for k2 in 0:norbital-1
             k_tot = momentum_add_2d(k1,k2,Nkx,Nky)
             if k_tot == momentum
-                hilbert_alpha = BuildHilbert(nalpha,k1,hilbertspace)
-                hilbert_beta = BuildHilbert(nbeta,k2,hilbertspace)
+                hilbert_alpha = BuildHilbert(nalpha,k1,hilbertspace; use_cache)
+                hilbert_beta = BuildHilbert(nbeta,k2,hilbertspace; use_cache)
                 for i in eachindex(hilbert_beta)
                     hilbert_beta[i] = hilbert_beta[i] << 1
                 end
