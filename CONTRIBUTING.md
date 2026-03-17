@@ -32,6 +32,15 @@ This writes a Markdown summary and TSV table under `benchmarks/results/`. Use
 `benchmarks/TARGETS.md` as the reference workload list and soft-envelope guide
 when comparing runs.
 
+## Documentation
+
+Build the local documentation site with:
+
+```bash
+julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+julia --project=docs docs/make.jl
+```
+
 ## Development Notes
 
 - Prefer updating the maintained regression tests when changing public behavior.
