@@ -1,19 +1,9 @@
-using Test
-
-if isdefined(Main, :JuED)
-    const Package = Main.JuED
-else
-    include("../src/JuED.jl")
-    const Package = Main.JuED
-end
-
-const BasisSpaces = Package.BasisSpaces
-
 @testset "Package exports BasisSpaces but not EDMod" begin
-    @test :BasisSpaces in names(Package)
-    @test !(:EDMod in names(Package))
-    @test isdefined(Package.EDMod, :PublicAPIMod)
-    @test isdefined(Package.EDMod, :InternalMod)
+    @test :BasisSpaces in names(JuED)
+    @test !(:EDMod in names(JuED))
+    @test isdefined(JuED, :EDMod)
+    @test isdefined(JuED.EDMod, :PublicAPIMod)
+    @test isdefined(JuED.EDMod, :InternalMod)
 end
 
 @testset "BasisSpaces provides a unified basis namespace" begin
