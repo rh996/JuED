@@ -125,16 +125,34 @@ Completed in the current branch:
 13. Removed `ProgressMeter` calls from the Hamiltonian-constructor hot loops.
    The constructor-level threaded loops no longer update progress bars while
    counting/filling CSC data.
-14. Revalidated the refactored constructor path.
+14. Replaced duplicated operator-application bodies with shared channel kernels.
+   One-body and two-body transitions are now represented by shared channel
+   structs and applied through common operator helpers for both sparse and
+   matrix-free paths.
+15. Precomputed reusable scattering channels for the 6-index momentum path.
+   The momentum constructor now builds only nonzero interaction channels instead
+   of looping over every `ik, ikp, iq` combination during sparse assembly.
+16. Added a first-class matrix-free Hamiltonian action API.
+   `HamiltonianAction(...)` is now exported and the diagonalization entry points
+   support `matrixfree=true` alongside explicit sparse CSC construction.
+17. Hardened the ED entry points for zero-nonzero sectors.
+   Sparse solves now derive the pointer type from `eltype(row)` instead of
+   assuming `row[1]` exists.
+18. Revalidated the refactored constructor path.
    `tests/test_list_constructor.jl` and the Hilbert-space regression checks were
    rerun after the constructor unification.
+19. Added targeted sparse-vs-matrix-free regression coverage.
+   `tests/test_hamiltonian_action.jl` now checks that `HamiltonianAction(v)`
+   matches `SparseMatrixCSC * v` and that sparse and matrix-free eigensolves
+   agree on small 4-index and 6-index momentum-sector problems.
 
 Still pending from the early phases:
 
 1. Standard package metadata and a single canonical test runner.
-2. Public/internal API separation and Hamiltonian-construction unification.
-3. RDM architecture cleanup beyond collection typing, especially eliminating
+2. RDM architecture cleanup beyond collection typing, especially eliminating
    repeated Hilbert-space rebuilds and consolidating operator-application logic.
+3. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
+   repetition across the diagonalization entry points.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -234,23 +252,18 @@ The remaining follow-up items now belong to later phases:
 ## Phase 4: Hamiltonian Construction Refactor
 
 1. Extract a generic sparse-column assembly engine with a model-specific callback
-   for generating connected states. In progress.
-   The threaded two-pass CSC assembly scaffold is now shared between the main
-   Hamiltonian constructors, with model-specific count/fill callbacks.
+   for generating connected states. Completed.
 2. Remove duplicated two-pass CSC construction logic between the 4-index and
-   6-index interaction paths. In progress.
-   The duplicated count/prefix/fill scaffolding has been removed, but the
-   operator-application kernels themselves are still duplicated across the
-   callback bodies.
+   6-index interaction paths. Completed.
 3. Precompute reusable operator index maps for momentum-conserving scattering
-   channels.
+   channels. Completed for the momentum constructor path.
 4. Remove `ProgressMeter` calls from hot threaded loops or gate them behind a
    debug/performance flag. Completed for the constructor hot loops.
 5. Audit integer conversions so `row`, `indptr`, and dictionary indices use one
-   consistent type.
+   consistent type. Completed for the constructor and diagonalization paths.
 6. Add a matrix-free Hamiltonian application path as a first-class API alongside
    explicit sparse construction, based on the pattern already explored in the
-   vector-product tests.
+   vector-product tests. Completed.
 
 ### Deliverables
 
@@ -260,12 +273,12 @@ The remaining follow-up items now belong to later phases:
 
 ### Phase 4 Follow-Up
 
-1. Pull the repeated one-body/two-body operator kernels into smaller shared
-   helpers so the callbacks are thinner.
-2. Precompute or cache scattering-channel index maps for the 6-index momentum
-   interaction path.
-3. Decide whether the constructor scaffold should optionally support matrix-free
-   actions or remain strictly CSC-focused.
+Phase 4 is complete for the Hamiltonian-construction scope.
+The remaining related work now belongs to later phases:
+
+1. Further matrix-free solver ergonomics belong to Phase 5.
+2. Additional low-level performance tuning belongs to Phase 7.
+3. RDM-side operator-kernel consolidation belongs to Phase 6.
 
 ## Phase 5: Public API Simplification
 

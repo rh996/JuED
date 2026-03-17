@@ -20,7 +20,7 @@ include("TwoBandMomentumHilbertSpace2D.jl")
 include("HamiltonianConstructor.jl")
 include("DensityMatrices.jl")
 
-export DiagonalizeOneMomentum, InputModel, DiagonalizeAllMomentum
+export DiagonalizeOneMomentum, InputModel, DiagonalizeAllMomentum, HamiltonianAction
 
 using .HamiltonianConstructorMod
 using .DensityMatricesMod
@@ -56,8 +56,17 @@ function InputTwoBandModel(nparticle, Nkx, Nky, OneBody::Array{T,2}, TwoBody::Ar
     return ModelParams2DTwoBand{T}(nparticle, Nkx, Nky, OneBody, TwoBody)
 end
 
+function _solve_sparse(::Type{T}, data, row, indptr, dim, neigenv) where {T}
+    pointertype = eltype(row)
+    return eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+end
 
-function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T}, momentum::Int, neigenv::Int; returnvectors::Int=1) where {T}
+function _solve_matrixfree(action, dim, neigenv)
+    return eigsolve(action, dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+end
+
+
+function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T}, momentum::Int, neigenv::Int; returnvectors::Int=1, matrixfree::Bool=false) where {T}
 
     nparticle = ModelParams2DSpinless.nparticle
     Nkx = ModelParams2DSpinless.Nkx
@@ -71,7 +80,11 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
     hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
     hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
 
-    data, row, indptr, dim = Hamiltonian_momentum_constructor(OneBody, TwoBody, hilbertspace)
+    if matrixfree
+        action, dim = HamiltonianAction(OneBody, TwoBody, hilbertspace)
+    else
+        data, row, indptr, dim = Hamiltonian_momentum_constructor(OneBody, TwoBody, hilbertspace)
+    end
 
     @show dim
 
@@ -79,8 +92,11 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
         neigenv = dim
     end
 
-    pointertype = typeof(row[1])
-    vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+    if matrixfree
+        vals, vecs, info = _solve_matrixfree(action, dim, neigenv)
+    else
+        vals, vecs, info = _solve_sparse(T, data, row, indptr, dim, neigenv)
+    end
 
     if returnvectors == 0
         return vals[1:neigenv]
@@ -93,7 +109,7 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
 end
 
 
-function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList{T}, momentum::Int, neigenv::Int; returnvectors::Int=1) where {T}
+function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList{T}, momentum::Int, neigenv::Int; returnvectors::Int=1, matrixfree::Bool=false) where {T}
 
     nparticle = ModelParams2DSpinless.nparticle
     Nkx = ModelParams2DSpinless.Nkx
@@ -107,7 +123,11 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
     hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
     hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
 
-    data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+    if matrixfree
+        action, dim = HamiltonianAction(OneBody, TwoBody, hilbertspace)
+    else
+        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+    end
 
     @show dim
 
@@ -115,9 +135,11 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
         neigenv = dim
     end
 
-    pointertype = typeof(row[1])
-    println("pointertype", pointertype)
-    vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+    if matrixfree
+        vals, vecs, info = _solve_matrixfree(action, dim, neigenv)
+    else
+        vals, vecs, info = _solve_sparse(T, data, row, indptr, dim, neigenv)
+    end
     @show info
     if returnvectors == 0
         return vals[1:neigenv]
@@ -130,7 +152,7 @@ function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
 end
 
 
-function DiagonalizeOneMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, momentum::Int, neigenv::Int; returnvectors::Int=1) where {T}
+function DiagonalizeOneMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, momentum::Int, neigenv::Int; returnvectors::Int=1, matrixfree::Bool=false) where {T}
 
     nalpha = ModelParams2DSpin.nalpha
     nbeta = ModelParams2DSpin.nbeta
@@ -145,7 +167,11 @@ function DiagonalizeOneMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, mom
     hilbertspace = SpinMomentumHilbertSpace2DMod.SpinMomentumHilbertSpace2D{indtype}(nalpha, nbeta, Nkx, Nky, momentum, [])
     SpinMomentumHilbertSpace2DMod.BuildSpinHilbert(hilbertspace)
 
-    data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+    if matrixfree
+        action, dim = HamiltonianAction(OneBody, TwoBody, hilbertspace)
+    else
+        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+    end
 
     @show dim
 
@@ -153,8 +179,11 @@ function DiagonalizeOneMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, mom
         neigenv = dim
     end
 
-    pointertype = typeof(row[1])
-    vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+    if matrixfree
+        vals, vecs, info = _solve_matrixfree(action, dim, neigenv)
+    else
+        vals, vecs, info = _solve_sparse(T, data, row, indptr, dim, neigenv)
+    end
 
     if returnvectors == 0
         return vals[1:neigenv]
@@ -170,7 +199,7 @@ end
 
 
 
-function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T}, neigenv::Int) where {T}
+function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T}, neigenv::Int; matrixfree::Bool=false) where {T}
     nparticle = ModelParams2DSpinless.nparticle
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
@@ -185,7 +214,11 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
         hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, k, [])
         hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
 
-        data, row, indptr, dim = Hamiltonian_momentum_constructor(OneBody, TwoBody, hilbertspace)
+        if matrixfree
+            action, dim = HamiltonianAction(OneBody, TwoBody, hilbertspace)
+        else
+            data, row, indptr, dim = Hamiltonian_momentum_constructor(OneBody, TwoBody, hilbertspace)
+        end
 
         @show dim
 
@@ -194,8 +227,11 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
         end
         # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
 
-        pointertype = typeof(row[1])
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+        if matrixfree
+            vals, vecs, info = _solve_matrixfree(action, dim, neigenv)
+        else
+            vals, vecs, info = _solve_sparse(T, data, row, indptr, dim, neigenv)
+        end
         # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
         push!(elist, vals[1:neigenv])
 
@@ -207,7 +243,7 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T},
 end
 
 
-function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList{T}, neigenv::Int; numer_of_vectors=3, save=false) where {T}
+function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList{T}, neigenv::Int; numer_of_vectors=3, save=false, matrixfree::Bool=false) where {T}
     nparticle = ModelParams2DSpinless.nparticle
     Nkx = ModelParams2DSpinless.Nkx
     Nky = ModelParams2DSpinless.Nky
@@ -226,7 +262,11 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
         hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, k, [])
         hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
 
-        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+        if matrixfree
+            action, dim = HamiltonianAction(OneBody, TwoBody, hilbertspace)
+        else
+            data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+        end
         # println("Total memory consumption: ", (Base.summarysize(data)+Base.summarysize(row)+Base.summarysize(indptr))/1024^2, " MB")
         @show dim
 
@@ -234,8 +274,11 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
             neigenv = dim
         end
         # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
-        pointertype = typeof(row[1])
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+        if matrixfree
+            vals, vecs, info = _solve_matrixfree(action, dim, neigenv)
+        else
+            vals, vecs, info = _solve_sparse(T, data, row, indptr, dim, neigenv)
+        end
         # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
         push!(elist, vals[1:neigenv])
         if save == true
@@ -253,7 +296,7 @@ function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList
 end
 
 
-function DiagonalizeAllMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, neigenv::Int) where {T}
+function DiagonalizeAllMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, neigenv::Int; matrixfree::Bool=false) where {T}
     nalpha = ModelParams2DSpin.nalpha
     nbeta = ModelParams2DSpin.nbeta
     Nkx = ModelParams2DSpin.Nkx
@@ -272,7 +315,11 @@ function DiagonalizeAllMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, nei
         hilbertspace = SpinMomentumHilbertSpace2DMod.SpinMomentumHilbertSpace2D{indtype}(nalpha, nbeta, Nkx, Nky, k, [])
         SpinMomentumHilbertSpace2DMod.BuildSpinHilbert(hilbertspace)
 
-        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+        if matrixfree
+            action, dim = HamiltonianAction(OneBody, TwoBody, hilbertspace)
+        else
+            data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+        end
 
         @show dim
 
@@ -280,8 +327,11 @@ function DiagonalizeAllMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, nei
             neigenv = dim
         end
         # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
-        pointertype = typeof(row[1])
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+        if matrixfree
+            vals, vecs, info = _solve_matrixfree(action, dim, neigenv)
+        else
+            vals, vecs, info = _solve_sparse(T, data, row, indptr, dim, neigenv)
+        end
         # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
         push!(elist, vals[1:neigenv])
 
@@ -293,7 +343,7 @@ function DiagonalizeAllMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, nei
 end
 
 
-function DiagonalizeAllMomentum(ModelParams2DTwoBand::ModelParams2DTwoBand{T}, neigenv::Int; numer_of_vectors=1, save=false) where {T}
+function DiagonalizeAllMomentum(ModelParams2DTwoBand::ModelParams2DTwoBand{T}, neigenv::Int; numer_of_vectors=1, save=false, matrixfree::Bool=false) where {T}
     nparticle = ModelParams2DTwoBand.nparticle
     Nkx = ModelParams2DTwoBand.Nkx
     Nky = ModelParams2DTwoBand.Nky
@@ -307,7 +357,11 @@ function DiagonalizeAllMomentum(ModelParams2DTwoBand::ModelParams2DTwoBand{T}, n
         hilbertspace = TwoBandMomentumHilbertSpace2DMod.TwoBandMomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, k, [])
         TwoBandMomentumHilbertSpace2DMod.BuildTwoBandHilbert(hilbertspace)
 
-        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+        if matrixfree
+            action, dim = HamiltonianAction(OneBody, TwoBody, hilbertspace)
+        else
+            data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
+        end
 
         @show dim
 
@@ -315,8 +369,11 @@ function DiagonalizeAllMomentum(ModelParams2DTwoBand::ModelParams2DTwoBand{T}, n
             neigenv = dim
         end
         # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
-        pointertype = typeof(row[1])
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+        if matrixfree
+            vals, vecs, info = _solve_matrixfree(action, dim, neigenv)
+        else
+            vals, vecs, info = _solve_sparse(T, data, row, indptr, dim, neigenv)
+        end
         # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
         push!(elist, vals[1:neigenv])
         if save == true

@@ -1,9 +1,6 @@
-
 module HamiltonianConstructorMod
 
-
-export Hamiltonian_list_constructor, Hamiltonian_momentum_constructor
-
+export Hamiltonian_list_constructor, Hamiltonian_momentum_constructor, HamiltonianAction
 
 using ..MomentumHilbertSpace2DMod
 using ..FermionOperatorMod
@@ -12,8 +9,22 @@ using SparseArrays
 
 AbstractHilbertSpace = MomentumHilbertSpace2DMod.AbstractHilbertSpace
 ToDict = MomentumHilbertSpace2DMod.ToDict
-function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}, hilbertspace::AbstractHilbertSpace)
 
+struct OneBodyChannel{T}
+    annihilate::Int
+    create::Int
+    value::T
+end
+
+struct TwoBodyChannel{T}
+    annihilate1::Int
+    annihilate2::Int
+    create1::Int
+    create2::Int
+    value::T
+end
+
+function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}, hilbertspace::AbstractHilbertSpace)
     hilbert = hilbertspace.hilbert
     ind_dict = ToDict(hilbertspace)
     ndim = size(OneBody)[1]
@@ -23,8 +34,6 @@ function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}
     for i in 1:ndim
         for j in 1:ndim
             for state_ind in eachindex(hilbert)
-
-
                 fermion = FermionOperator(hilbert[state_ind], 1)
                 AnnihilationOperator!(fermion, j)
                 if fermion.fermion_sign == 0
@@ -37,11 +46,9 @@ function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}
                 push!(data, OneBody[i, j] * fermion.fermion_sign)
                 push!(column, state_ind)
                 push!(row, ind_dict[fermion.state])
-
             end
         end
     end
-
 
     for i in 1:ndim
         for j in 1:ndim
@@ -68,7 +75,6 @@ function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}
                         push!(data, TwoBody[i, j, k, l] * fermion1.fermion_sign)
                         push!(column, state_ind)
                         push!(row, ind_dict[fermion1.state])
-
                     end
                 end
             end
@@ -76,7 +82,6 @@ function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}
     end
 
     return sparse(row, column, data, length(hilbert), length(hilbert))
-    # return data, row, column
 end
 
 @inline function _chunk_bounds(t::Int, chunk_size::Int, total_size::Int)
@@ -85,7 +90,149 @@ end
     return start_idx, end_idx
 end
 
-function _assemble_hamiltonian_csc(::Type{T}, hilbertspace, count_column!, fill_column!) where {T}
+function _onebody_channels(OneBody)
+    norbital = size(OneBody, 1)
+    channels = Vector{OneBodyChannel{eltype(OneBody)}}()
+    for ind in findall(x -> abs(x) > 1e-10, OneBody)
+        i = ind[1]
+        j = ind[2]
+        push!(channels, OneBodyChannel((norbital - j) + 1, (norbital - i) + 1, OneBody[i, j]))
+    end
+    return channels
+end
+
+function _list_twobody_channels(Eri)
+    norbital = size(Eri, 1)
+    channels = Vector{TwoBodyChannel{eltype(Eri)}}()
+    for ind in findall(x -> abs(x) > 1e-10, Eri)
+        i = ind[1]
+        j = ind[2]
+        k = ind[3]
+        l = ind[4]
+        push!(channels, TwoBodyChannel((norbital - k) + 1, (norbital - l) + 1, (norbital - j) + 1, (norbital - i) + 1, Eri[i, j, k, l]))
+    end
+    return channels
+end
+
+function _momentum_twobody_channels(Eri, hilbertspace)
+    Nkx = hilbertspace.Nkx
+    Nky = hilbertspace.Nky
+    nk = Nkx * Nky
+    channels = Vector{TwoBodyChannel{eltype(Eri)}}()
+
+    for ik in 0:(nk - 1)
+        ikx = mod(ik, Nkx)
+        iky = fld(ik, Nkx)
+        for ikp in 0:(nk - 1)
+            ikpx = mod(ikp, Nkx)
+            ikpy = fld(ikp, Nkx)
+            for iq in 0:(nk - 1)
+                iqx = mod(iq, Nkx)
+                iqy = fld(iq, Nkx)
+                value = Eri[ikx+1, iky+1, ikpx+1, ikpy+1, iqx+1, iqy+1]
+                if abs(value) <= 1e-10
+                    continue
+                end
+
+                create2 = nk - momentum_add_2d(ik, iq, Nkx, Nky)
+                annihilate1 = nk - ik
+                create1 = nk - momentum_sub_2d(ikp, iq, Nkx, Nky)
+                annihilate2 = nk - ikp
+                push!(channels, TwoBodyChannel(annihilate1, annihilate2, create1, create2, value))
+            end
+        end
+    end
+
+    return channels
+end
+
+function _hamiltonian_channels(OneBody, Eri::Array{T,4}, hilbertspace) where {T}
+    return _onebody_channels(OneBody), _list_twobody_channels(Eri)
+end
+
+function _hamiltonian_channels(OneBody, Eri::Array{T,6}, hilbertspace) where {T}
+    return _onebody_channels(OneBody), _momentum_twobody_channels(Eri, hilbertspace)
+end
+
+@inline function _apply_onebody_channel(state, channel::OneBodyChannel)
+    fermion = FermionOperator(state, 1)
+    AnnihilationOperator!(fermion, channel.annihilate)
+    if fermion.fermion_sign == 0
+        return 0, state
+    end
+    CreationOperator!(fermion, channel.create)
+    if fermion.fermion_sign == 0
+        return 0, state
+    end
+    return fermion.fermion_sign, fermion.state
+end
+
+@inline function _apply_twobody_channel(state, channel::TwoBodyChannel)
+    fermion = FermionOperator(state, 1)
+    AnnihilationOperator!(fermion, channel.annihilate1)
+    if fermion.fermion_sign == 0
+        return 0, state
+    end
+    AnnihilationOperator!(fermion, channel.annihilate2)
+    if fermion.fermion_sign == 0
+        return 0, state
+    end
+    CreationOperator!(fermion, channel.create1)
+    if fermion.fermion_sign == 0
+        return 0, state
+    end
+    CreationOperator!(fermion, channel.create2)
+    if fermion.fermion_sign == 0
+        return 0, state
+    end
+    return fermion.fermion_sign, fermion.state
+end
+
+@inline function _count_connected_terms(state, onebody_channels, twobody_channels)
+    local_count = 0
+
+    for channel in onebody_channels
+        sign, _ = _apply_onebody_channel(state, channel)
+        if sign != 0
+            local_count += 1
+        end
+    end
+
+    for channel in twobody_channels
+        sign, _ = _apply_twobody_channel(state, channel)
+        if sign != 0
+            local_count += 1
+        end
+    end
+
+    return local_count
+end
+
+@inline function _fill_connected_terms!(state, writepos, data, row, ind_dict, onebody_channels, twobody_channels)
+    for channel in onebody_channels
+        sign, next_state = _apply_onebody_channel(state, channel)
+        if sign == 0
+            continue
+        end
+        data[writepos] = channel.value * sign
+        row[writepos] = ind_dict[next_state]
+        writepos += 1
+    end
+
+    for channel in twobody_channels
+        sign, next_state = _apply_twobody_channel(state, channel)
+        if sign == 0
+            continue
+        end
+        data[writepos] = channel.value * sign
+        row[writepos] = ind_dict[next_state]
+        writepos += 1
+    end
+
+    return nothing
+end
+
+function _assemble_hamiltonian_csc(::Type{T}, hilbertspace, onebody_channels, twobody_channels) where {T}
     hilbert = hilbertspace.hilbert
     dim_hilbert = length(hilbert)
     nthreads_total = Threads.nthreads()
@@ -95,7 +242,7 @@ function _assemble_hamiltonian_csc(::Type{T}, hilbertspace, count_column!, fill_
     Threads.@threads for t in 1:nthreads_total
         start_idx, end_idx = _chunk_bounds(t, chunk_size, dim_hilbert)
         @inbounds for state_ind in start_idx:end_idx
-            nnz_col[state_ind] = count_column!(state_ind)
+            nnz_col[state_ind] = _count_connected_terms(hilbert[state_ind], onebody_channels, twobody_channels)
         end
     end
 
@@ -114,279 +261,82 @@ function _assemble_hamiltonian_csc(::Type{T}, hilbertspace, count_column!, fill_
     Threads.@threads for t in 1:nthreads_total
         start_idx, end_idx = _chunk_bounds(t, chunk_size, dim_hilbert)
         @inbounds for state_ind in start_idx:end_idx
-            fill_column!(state_ind, indptr[state_ind], data, row, ind_dict)
+            _fill_connected_terms!(hilbert[state_ind], indptr[state_ind], data, row, ind_dict, onebody_channels, twobody_channels)
         end
     end
 
     return data, row, indptr, dim_hilbert
 end
 
-function Hamiltonian_momentum_constructor(OneBody, Eri::Array{T,6}, hilbertspace) where {T}
-    onebodyind = findall(x -> abs(x) > 1e-10, OneBody)
+function _hamiltonian_action(coefftype::Type, hilbertspace, onebody_channels, twobody_channels)
     hilbert = hilbertspace.hilbert
-    norbital = size(OneBody)[1]
-    Nkx, Nky = hilbertspace.Nkx, hilbertspace.Nky
-    Nk = Nkx * Nky
+    dim = length(hilbert)
+    ind_dict = ToDict(hilbertspace)
 
-    function count_column!(state_ind)
-        local_count = 0
+    function action(v::AbstractVector)
+        result_type = promote_type(eltype(v), coefftype)
+        local_results = [zeros(result_type, dim) for _ in 1:Threads.nthreads()]
+        nthreads_total = Threads.nthreads()
+        chunk_size = ceil(Int, dim / nthreads_total)
 
-        for ind in onebodyind
-            i = ind[1]
-            j = ind[2]
-            inversei = (norbital - i) + 1
-            inversej = (norbital - j) + 1
+        Threads.@threads for t in 1:nthreads_total
+            start_idx, end_idx = _chunk_bounds(t, chunk_size, dim)
+            local_result = local_results[Threads.threadid()]
+            @inbounds for state_ind in start_idx:end_idx
+                amplitude = v[state_ind]
+                if iszero(amplitude)
+                    continue
+                end
 
-            fermion = FermionOperator(hilbert[state_ind], 1)
-            AnnihilationOperator!(fermion, inversej)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversei)
-            if fermion.fermion_sign == 0
-                continue
-            end
-
-            local_count += 1
-        end
-
-        for ik in 0:(Nk-1)
-            for ikp in 0:(Nk-1)
-                for iq in 0:(Nk-1)
-                    ind1 = norbital - momentum_add_2d(ik, iq, Nkx, Nky)
-                    ind2 = norbital - ik
-                    ind3 = norbital - momentum_sub_2d(ikp, iq, Nkx, Nky)
-                    ind4 = norbital - ikp
-
-                    fermion = FermionOperator(hilbert[state_ind], 1)
-                    AnnihilationOperator!(fermion, ind2)
-                    if fermion.fermion_sign == 0
+                state = hilbert[state_ind]
+                for channel in onebody_channels
+                    sign, next_state = _apply_onebody_channel(state, channel)
+                    if sign == 0
                         continue
                     end
-                    AnnihilationOperator!(fermion, ind4)
-                    if fermion.fermion_sign == 0
-                        continue
-                    end
-                    CreationOperator!(fermion, ind3)
-                    if fermion.fermion_sign == 0
-                        continue
-                    end
-                    CreationOperator!(fermion, ind1)
-                    if fermion.fermion_sign == 0
-                        continue
-                    end
+                    local_result[ind_dict[next_state]] += channel.value * sign * amplitude
+                end
 
-                    local_count += 1
+                for channel in twobody_channels
+                    sign, next_state = _apply_twobody_channel(state, channel)
+                    if sign == 0
+                        continue
+                    end
+                    local_result[ind_dict[next_state]] += channel.value * sign * amplitude
                 end
             end
         end
 
-        return local_count
+        result = zeros(result_type, dim)
+        for local_result in local_results
+            result .+= local_result
+        end
+        return result
     end
 
-    function fill_column!(state_ind, writepos, data, row, ind_dict)
-        for ind in onebodyind
-            i = ind[1]
-            j = ind[2]
-            inversei = (norbital - i) + 1
-            inversej = (norbital - j) + 1
-            fermion = FermionOperator(hilbert[state_ind], 1)
-
-            AnnihilationOperator!(fermion, inversej)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversei)
-            if fermion.fermion_sign == 0
-                continue
-            end
-
-            data[writepos] = OneBody[i, j] * fermion.fermion_sign
-            row[writepos] = ind_dict[fermion.state]
-            writepos += 1
-        end
-
-        for ik in 0:(norbital-1)
-            for ikp in 0:(norbital-1)
-                for iq in 0:(norbital-1)
-                    ind1 = norbital - momentum_add_2d(ik, iq, Nkx, Nky)
-                    ind2 = norbital - ik
-                    ind3 = norbital - momentum_sub_2d(ikp, iq, Nkx, Nky)
-                    ind4 = norbital - ikp
-
-                    fermion = FermionOperator(hilbert[state_ind], 1)
-                    AnnihilationOperator!(fermion, ind2)
-                    if fermion.fermion_sign == 0
-                        continue
-                    end
-                    AnnihilationOperator!(fermion, ind4)
-                    if fermion.fermion_sign == 0
-                        continue
-                    end
-                    CreationOperator!(fermion, ind3)
-                    if fermion.fermion_sign == 0
-                        continue
-                    end
-                    CreationOperator!(fermion, ind1)
-                    if fermion.fermion_sign == 0
-                        continue
-                    end
-
-                    ikx = mod(ik, Nkx)
-                    iky = fld(ik, Nkx)
-                    ikpx = mod(ikp, Nkx)
-                    ikpy = fld(ikp, Nkx)
-                    iqx = mod(iq, Nkx)
-                    iqy = fld(iq, Nkx)
-
-                    data[writepos] = Eri[ikx+1, iky+1, ikpx+1, ikpy+1, iqx+1, iqy+1] * fermion.fermion_sign
-                    row[writepos] = ind_dict[fermion.state]
-                    writepos += 1
-                end
-            end
-        end
-
-        return nothing
-    end
-
-    return _assemble_hamiltonian_csc(T, hilbertspace, count_column!, fill_column!)
+    return action, dim
 end
 
-
-
-
-
-
-
-
-
-
+function Hamiltonian_momentum_constructor(OneBody, Eri::Array{T,6}, hilbertspace) where {T}
+    onebody_channels, twobody_channels = _hamiltonian_channels(OneBody, Eri, hilbertspace)
+    return _assemble_hamiltonian_csc(T, hilbertspace, onebody_channels, twobody_channels)
+end
 
 function Hamiltonian_list_constructor(OneBody, Eri::Array{T,4}, hilbertspace) where {T}
-    onebodyind = findall(x -> abs(x) > 1e-10, OneBody)
-    eriind = findall(x -> abs(x) > 1e-10, Eri)
-    hilbert = hilbertspace.hilbert
-    norbital = size(OneBody)[1]
-    function count_column!(state_ind)
-        local_count = 0
-
-        for ind1 in onebodyind
-            i = ind1[1]
-            j = ind1[2]
-            fermion = FermionOperator(hilbert[state_ind], 1)
-            inversei = (norbital - i) + 1
-            inversej = (norbital - j) + 1
-
-            AnnihilationOperator!(fermion, inversej)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversei)
-            if fermion.fermion_sign == 0
-                continue
-            end
-
-            local_count += 1
-        end
-
-        for ind2 in eriind
-            i = ind2[1]
-            j = ind2[2]
-            k = ind2[3]
-            l = ind2[4]
-
-            inversei = (norbital - i) + 1
-            inversej = (norbital - j) + 1
-            inversek = (norbital - k) + 1
-            inversel = (norbital - l) + 1
-
-            fermion = FermionOperator(hilbert[state_ind], 1)
-            AnnihilationOperator!(fermion, inversek)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            AnnihilationOperator!(fermion, inversel)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversej)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversei)
-            if fermion.fermion_sign == 0
-                continue
-            end
-
-            local_count += 1
-        end
-
-        return local_count
-    end
-
-    function fill_column!(state_ind, writepos, data, row, ind_dict)
-        for ind1 in onebodyind
-            i = ind1[1]
-            j = ind1[2]
-            inversei = (norbital - i) + 1
-            inversej = (norbital - j) + 1
-            fermion = FermionOperator(hilbert[state_ind], 1)
-
-            AnnihilationOperator!(fermion, inversej)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversei)
-            if fermion.fermion_sign == 0
-                continue
-            end
-
-            data[writepos] = OneBody[i, j] * fermion.fermion_sign
-            row[writepos] = ind_dict[fermion.state]
-            writepos += 1
-        end
-
-        for ind2 in eriind
-            i = ind2[1]
-            j = ind2[2]
-            k = ind2[3]
-            l = ind2[4]
-
-            inversei = (norbital - i) + 1
-            inversej = (norbital - j) + 1
-            inversek = (norbital - k) + 1
-            inversel = (norbital - l) + 1
-
-            fermion = FermionOperator(hilbert[state_ind], 1)
-            AnnihilationOperator!(fermion, inversek)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            AnnihilationOperator!(fermion, inversel)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversej)
-            if fermion.fermion_sign == 0
-                continue
-            end
-            CreationOperator!(fermion, inversei)
-            if fermion.fermion_sign == 0
-                continue
-            end
-
-            data[writepos] = Eri[i, j, k, l] * fermion.fermion_sign
-            row[writepos] = ind_dict[fermion.state]
-            writepos += 1
-        end
-
-        return nothing
-    end
-
-    return _assemble_hamiltonian_csc(T, hilbertspace, count_column!, fill_column!)
-
+    onebody_channels, twobody_channels = _hamiltonian_channels(OneBody, Eri, hilbertspace)
+    return _assemble_hamiltonian_csc(T, hilbertspace, onebody_channels, twobody_channels)
 end
 
+function HamiltonianAction(OneBody, Eri::Array{T,4}, hilbertspace) where {T}
+    onebody_channels, twobody_channels = _hamiltonian_channels(OneBody, Eri, hilbertspace)
+    coefftype = promote_type(eltype(OneBody), T)
+    return _hamiltonian_action(coefftype, hilbertspace, onebody_channels, twobody_channels)
+end
 
+function HamiltonianAction(OneBody, Eri::Array{T,6}, hilbertspace) where {T}
+    onebody_channels, twobody_channels = _hamiltonian_channels(OneBody, Eri, hilbertspace)
+    coefftype = promote_type(eltype(OneBody), T)
+    return _hamiltonian_action(coefftype, hilbertspace, onebody_channels, twobody_channels)
+end
 
 end
