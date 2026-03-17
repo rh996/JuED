@@ -42,6 +42,16 @@ rdm1 = RDM1(model, ground_vector, 0)
 rdm2_compact = RDM2(model, ground_vector, 0; representation=:compact)
 ```
 
+For repeated analysis of the same sector, you can keep the workspace and persist
+the compact higher-body RDMs:
+
+```julia
+workspace = RDMWorkspace(model, 0)
+rdm3_compact = RDM3Compact(workspace, ground_vector; savefile="data/rdm3_k0.jld2")
+rdm3_loaded = load_compact_rdm3(workspace; file="data/rdm3_k0.jld2")
+rdm3_dense = todense(rdm3_loaded)
+```
+
 Backward-compatible wrappers such as `InputModel`, `DiagonalizeOneMomentum`, and
 `DiagonalizeAllMomentum` are still available, but the preferred public API is:
 

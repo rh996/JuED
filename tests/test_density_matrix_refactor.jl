@@ -87,6 +87,7 @@ end
     end
 
     cache_file = tempname() * ".jld2"
+    compact_file = tempname() * ".jld2"
     try
         EDMod.RDM2_cache(workspace; file=cache_file)
         rdm2_compact_cached = EDMod.RDM2Compact(workspace, coeffs, cache_file)
@@ -110,8 +111,29 @@ end
             "k_$(workspace.momentum)", payload["entries"],
         )
         @test_throws ArgumentError EDMod.RDM2(workspace, coeffs, cache_file)
+
+        rdm2_compact_saved = EDMod.RDM2Compact(workspace, coeffs; savefile=compact_file)
+        rdm2_compact_loaded = EDMod.load_compact_rdm2(workspace; file=compact_file)
+        rdm2_compact_loaded_public = EDMod.RDM2Compact(workspace; file=compact_file)
+        @test isapprox(EDMod.todense(rdm2_compact_loaded), rdm2_workspace; atol=1e-10)
+        @test rdm2_compact_loaded.elements == rdm2_compact_saved.elements
+        @test rdm2_compact_loaded.values == rdm2_compact_saved.values
+        @test rdm2_compact_loaded_public.values == rdm2_compact_saved.values
+
+        compact_payload = load(compact_file)
+        save(compact_file, merge(compact_payload, Dict("momentum" => Int32(workspace.momentum + 1))))
+        @test_throws ArgumentError EDMod.load_compact_rdm2(workspace; file=compact_file)
     finally
         isfile(cache_file) && rm(cache_file; force=true)
+        isfile(compact_file) && rm(compact_file; force=true)
+    end
+
+    model_compact_file = tempname() * ".jld2"
+    try
+        EDMod.RDM2Compact(model, coeffs, workspace.momentum; savefile=model_compact_file)
+        @test isapprox(EDMod.todense(EDMod.load_compact_rdm2(workspace; file=model_compact_file)), rdm2_workspace; atol=1e-10)
+    finally
+        isfile(model_compact_file) && rm(model_compact_file; force=true)
     end
 end
 
@@ -138,6 +160,31 @@ end
         if (i, j, k) != (l, m, n)
             @test isapprox(rdm3_threaded[element...], rdm3_naive[element...]; atol=1e-10)
         end
+    end
+
+    compact_file = tempname() * ".jld2"
+    try
+        rdm3_compact_saved = EDMod.RDM3Compact(workspace, coeffs; savefile=compact_file)
+        rdm3_compact_loaded = EDMod.load_compact_rdm3(workspace; file=compact_file)
+        rdm3_compact_loaded_public = EDMod.RDM3Compact(workspace; file=compact_file)
+        @test isapprox(EDMod.todense(rdm3_compact_loaded), rdm3_threaded; atol=1e-10)
+        @test rdm3_compact_loaded.elements == rdm3_compact_saved.elements
+        @test rdm3_compact_loaded.values == rdm3_compact_saved.values
+        @test rdm3_compact_loaded_public.values == rdm3_compact_saved.values
+
+        compact_payload = load(compact_file)
+        save(compact_file, merge(compact_payload, Dict("rdm_order" => Int32(2))))
+        @test_throws ArgumentError EDMod.load_compact_rdm3(workspace; file=compact_file)
+    finally
+        isfile(compact_file) && rm(compact_file; force=true)
+    end
+
+    model_compact_file = tempname() * ".jld2"
+    try
+        EDMod.RDM3Compact(model, coeffs, workspace.momentum; savefile=model_compact_file)
+        @test isapprox(EDMod.todense(EDMod.load_compact_rdm3(workspace; file=model_compact_file)), rdm3_threaded; atol=1e-10)
+    finally
+        isfile(model_compact_file) && rm(model_compact_file; force=true)
     end
 end
 

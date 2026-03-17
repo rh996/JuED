@@ -232,14 +232,24 @@ Completed in the current branch:
    verifies that `EDMod` is no longer exported from the package surface, and
    exercises the unified basis builders and state-index mapping through the new
    namespace.
+40. Added file-backed compact RDM persistence for the Phase 6 follow-up scope.
+   `DensityMatrices.jl` now supports `compact_rdm_filename(...)`,
+   `save_compact_rdm(...)`, `load_compact_rdm2(...)`, and
+   `load_compact_rdm3(...)`, and `RDM2Compact(...)` / `RDM3Compact(...)` can
+   write compact RDM data directly while preserving workspace metadata for
+   validation on reload.
+41. Added compact-RDM round-trip regression coverage.
+   `tests/test_density_matrix_refactor.jl` now checks compact `RDM2`/`RDM3`
+   save-load round-tripping, public package exports for the new helpers, model-
+   level savefile wrappers, and metadata-mismatch failures for the persisted
+   compact payloads.
 
 Still pending:
 
 1. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
    repetition across the diagonalization entry points.
-2. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
-   a more scalable on-disk format for large compact RDM objects and any later
-   API ergonomics around those compact representations.
+2. Later API ergonomics around compact RDM-first workflows, especially if the
+   project wants dense output to stop being the default for higher-body RDMs.
 3. Phase 7 benchmark and allocation work.
 
 ## Phase 0: Package and Repository Hygiene
@@ -482,6 +492,9 @@ The remaining related work now belongs to later phases:
 
 1. Larger benchmark and allocation work belongs to Phase 7.
 2. Broader API cleanup and naming ergonomics belong to Phase 5.
+3. Compact-RDM persistence is now available, so any remaining work in this area
+   is about higher-level workflow ergonomics rather than missing storage
+   infrastructure.
 
 ### Deliverables
 

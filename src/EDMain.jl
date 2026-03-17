@@ -22,6 +22,7 @@ export DiagonalizeOneMomentum, InputModel, InputTwoBandModel, DiagonalizeAllMome
 export SpinlessListModel, SpinlessMomentumModel, SpinfulListModel, SpinfulMomentumModel, TwoBandModel
 export SolverConfig, BuildSector, BuildOperator, SolveSector, SolveAllSectors
 export RDMWorkspace, CompactRDM2, CompactRDM3, RDM1, RDM2, RDM3, RDM2Compact, RDM3Compact, RDM2_cache, todense
+export compact_rdm_filename, save_compact_rdm, load_compact_rdm2, load_compact_rdm3
 export BasisSpaces
 
 using .HamiltonianConstructorMod
