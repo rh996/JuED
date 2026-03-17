@@ -10,6 +10,7 @@ using ..TwoBandMomentumHilbertSpace2DMod
 using JLD2
 
 export RDMWorkspace, CompactRDM2, CompactRDM3, RDM1, RDM2, RDM3, RDM2Compact, RDM3Compact, RDM3_single_thread, RDM2_cache, RDM3_naive, RDM2_naive, todense
+export compact_rdm_filename, save_compact_rdm, load_compact_rdm2, load_compact_rdm3
 
 const PairTuple = NTuple{2,Int}
 const TripleTuple = NTuple{3,Int}
@@ -18,6 +19,7 @@ const SextTuple = NTuple{6,Int}
 const RDM3_LEFT_PERMS = ((1, 2, 3), (1, 3, 2), (2, 1, 3), (2, 3, 1), (3, 1, 2), (3, 2, 1))
 const RDM3_RIGHT_PERMS = ((4, 5, 6), (4, 6, 5), (5, 4, 6), (5, 6, 4), (6, 4, 5), (6, 5, 4))
 const RDM2_CACHE_SCHEMA_VERSION = 1
+const COMPACT_RDM_SCHEMA_VERSION = 1
 
 struct RDMSectorWorkspace{TH,TS<:Integer,TI<:Integer}
     kind::Symbol
@@ -271,6 +273,105 @@ function todense(rdm::CompactRDM3{T}) where {T}
     return _antisymmetrize_rdm3(dense)
 end
 
+@inline _compact_rdm_order(::CompactRDM2) = 2
+@inline _compact_rdm_order(::CompactRDM3) = 3
+@inline _compact_rdm_order(::Type{CompactRDM2}) = 2
+@inline _compact_rdm_order(::Type{CompactRDM3}) = 3
+
+function compact_rdm_filename(workspace::RDMSectorWorkspace, order::Int; dir::String="./data")
+    if order != 2 && order != 3
+        throw(ArgumentError("Unsupported compact RDM order $(order). Use 2 or 3."))
+    end
+    model_tag = String(workspace.kind)
+    return joinpath(dir, "compact_rdm$(order)_v$(COMPACT_RDM_SCHEMA_VERSION)_$(model_tag)_n$(workspace.nparticle)_K$(workspace.Nkx)x$(workspace.Nky)_k$(workspace.momentum).jld2")
+end
+
+function _compact_rdm_payload(rdm::CompactRDM2, workspace::RDMSectorWorkspace)
+    return Dict(
+        "schema_version" => Int32(COMPACT_RDM_SCHEMA_VERSION),
+        "payload_kind" => "compact_rdm",
+        "rdm_order" => Int32(2),
+        "model_kind" => String(workspace.kind),
+        "Nkx" => Int32(workspace.Nkx),
+        "Nky" => Int32(workspace.Nky),
+        "momentum" => Int32(workspace.momentum),
+        "nparticle" => Int32(workspace.nparticle),
+        "norb" => Int32(rdm.norb),
+        "elements" => rdm.elements,
+        "values" => rdm.values,
+    )
+end
+
+function _compact_rdm_payload(rdm::CompactRDM3, workspace::RDMSectorWorkspace)
+    return Dict(
+        "schema_version" => Int32(COMPACT_RDM_SCHEMA_VERSION),
+        "payload_kind" => "compact_rdm",
+        "rdm_order" => Int32(3),
+        "model_kind" => String(workspace.kind),
+        "Nkx" => Int32(workspace.Nkx),
+        "Nky" => Int32(workspace.Nky),
+        "momentum" => Int32(workspace.momentum),
+        "nparticle" => Int32(workspace.nparticle),
+        "norb" => Int32(rdm.norb),
+        "elements" => rdm.elements,
+        "values" => rdm.values,
+    )
+end
+
+function save_compact_rdm(rdm::Union{CompactRDM2,CompactRDM3}, workspace::RDMSectorWorkspace; file::String=compact_rdm_filename(workspace, _compact_rdm_order(rdm)))
+    payload = _compact_rdm_payload(rdm, workspace)
+    mkpath(dirname(file))
+    save(file, payload)
+    return file
+end
+
+function _load_compact_rdm_payload(file::String)
+    return load(file)
+end
+
+function _validate_compact_rdm_payload!(workspace::RDMSectorWorkspace, payload, order::Int)
+    if get(payload, "schema_version", Int32(-1)) != Int32(COMPACT_RDM_SCHEMA_VERSION)
+        throw(ArgumentError("Compact RDM schema version mismatch for workspace $(workspace.kind)."))
+    end
+    if get(payload, "payload_kind", "") != "compact_rdm"
+        throw(ArgumentError("Unsupported compact RDM payload kind."))
+    end
+    if get(payload, "rdm_order", Int32(-1)) != Int32(order)
+        throw(ArgumentError("Compact RDM order does not match the requested loader."))
+    end
+    if get(payload, "model_kind", "") != String(workspace.kind)
+        throw(ArgumentError("Compact RDM model kind does not match the requested workspace."))
+    end
+    if get(payload, "Nkx", Int32(-1)) != Int32(workspace.Nkx) || get(payload, "Nky", Int32(-1)) != Int32(workspace.Nky)
+        throw(ArgumentError("Compact RDM lattice dimensions do not match the requested workspace."))
+    end
+    if get(payload, "momentum", Int32(-1)) != Int32(workspace.momentum)
+        throw(ArgumentError("Compact RDM momentum does not match the requested workspace."))
+    end
+    if get(payload, "nparticle", Int32(-1)) != Int32(workspace.nparticle)
+        throw(ArgumentError("Compact RDM particle number does not match the requested workspace."))
+    end
+    if get(payload, "norb", Int32(-1)) != Int32(workspace.norb)
+        throw(ArgumentError("Compact RDM orbital count does not match the requested workspace."))
+    end
+    if !haskey(payload, "elements") || !haskey(payload, "values")
+        throw(ArgumentError("Compact RDM payload is missing elements or values."))
+    end
+    return nothing
+end
+
+function load_compact_rdm2(workspace::RDMSectorWorkspace; file::String=compact_rdm_filename(workspace, 2))
+    payload = _load_compact_rdm_payload(file)
+    _validate_compact_rdm_payload!(workspace, payload, 2)
+    return CompactRDM2(Int(payload["norb"]), payload["elements"], payload["values"])
+end
+
+function load_compact_rdm3(workspace::RDMSectorWorkspace; file::String=compact_rdm_filename(workspace, 3))
+    payload = _load_compact_rdm_payload(file)
+    _validate_compact_rdm_payload!(workspace, payload, 3)
+    return CompactRDM3(Int(payload["norb"]), payload["elements"], payload["values"])
+end
+
 function _rdm_representation(representation::Symbol, compact_value, dense_builder::Function)
     if representation == :compact
         return compact_value
@@ -302,7 +403,7 @@ function RDM1(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T
     return rdm1
 end
 
-function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
+function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}; savefile::Union{Nothing,String}=nothing) where {T}
     _check_coefficients(workspace, coeffs)
     values = zeros(T, length(workspace.rdm2_elements))
     nthreads_total = Threads.nthreads()
@@ -325,7 +426,11 @@ function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) w
     for local_values in thread_values
         values .+= local_values
     end
-    return CompactRDM2(workspace.norb, workspace.rdm2_elements, values)
+    compact = CompactRDM2(workspace.norb, workspace.rdm2_elements, values)
+    if savefile !== nothing
+        save_compact_rdm(compact, workspace; file=savefile)
+    end
+    return compact
 end
 
 function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}; representation::Symbol=:dense) where {T}
@@ -387,6 +492,10 @@ function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, f
     return CompactRDM2(workspace.norb, workspace.rdm2_elements, values)
 end
 
+function RDM2Compact(workspace::RDMSectorWorkspace; file::String=compact_rdm_filename(workspace, 2))
+    return load_compact_rdm2(workspace; file)
+end
+
 function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, file::String; representation::Symbol=:dense) where {T}
     compact = RDM2Compact(workspace, coeffs, file)
     return _rdm_representation(representation, compact, () -> todense(compact))
@@ -442,8 +551,8 @@ function RDM2(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momen
     return RDM2(RDMWorkspace(model, momentum), coeffs; representation)
 end
 
-function RDM2Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
-    return RDM2Compact(RDMWorkspace(model, momentum), coeffs)
+function RDM2Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int; savefile::Union{Nothing,String}=nothing) where {T}
+    return RDM2Compact(RDMWorkspace(model, momentum), coeffs; savefile)
 end
 
 function RDM2Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int, file::String) where {T}
@@ -466,11 +575,11 @@ function RDM2(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::
     return RDM2(RDMWorkspace(model, momentum), coeffs; representation)
 end
 
-function RDM2Compact(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::Int) where {T}
-    return RDM2Compact(RDMWorkspace(model, momentum), coeffs)
+function RDM2Compact(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::Int; savefile::Union{Nothing,String}=nothing) where {T}
+    return RDM2Compact(RDMWorkspace(model, momentum), coeffs; savefile)
 end
 
-function RDM3Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
+function RDM3Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}; savefile::Union{Nothing,String}=nothing) where {T}
     _check_coefficients(workspace, coeffs)
     if workspace.kind != :spinless_2d
         throw(ArgumentError("RDM3 is currently only implemented for the spinless 2D workspace."))
@@ -496,7 +605,11 @@ function RDM3Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) w
     for local_values in thread_values
         values .+= local_values
     end
-    return CompactRDM3(workspace.norb, workspace.rdm3_elements, values)
+    compact = CompactRDM3(workspace.norb, workspace.rdm3_elements, values)
+    if savefile !== nothing
+        save_compact_rdm(compact, workspace; file=savefile)
+    end
+    return compact
 end
 
 function RDM3(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}; representation::Symbol=:dense) where {T}
@@ -504,12 +617,16 @@ function RDM3(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}; represen
     return _rdm_representation(representation, compact, () -> todense(compact))
 end
 
+function RDM3Compact(workspace::RDMSectorWorkspace; file::String=compact_rdm_filename(workspace, 3))
+    return load_compact_rdm3(workspace; file)
+end
+
 function RDM3(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int; representation::Symbol=:dense) where {T}
     return RDM3(RDMWorkspace(model, momentum), coeffs; representation)
 end
 
-function RDM3Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
-    return RDM3Compact(RDMWorkspace(model, momentum), coeffs)
+function RDM3Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int; savefile::Union{Nothing,String}=nothing) where {T}
+    return RDM3Compact(RDMWorkspace(model, momentum), coeffs; savefile)
 end
 
 function RDM3_single_thread(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}

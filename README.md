@@ -1,26 +1,29 @@
 # JuED
 
-JuED is a Julia exact-diagonalization codebase for fermionic lattice models with
-momentum-, spin-, and two-band sector support. The maintained package surface
-currently covers:
+JuED is a Julia exact-diagonalization package for fermionic lattice models. It
+provides:
 
 - symmetry-reduced Hilbert-space construction
 - sparse and matrix-free Hamiltonian application
-- momentum-sector eigensolving with `KrylovKit`
+- momentum-sector eigensolvers built on `KrylovKit`
 - one-, two-, and three-body reduced density matrices
 
-## Install
+## Installation
 
-```bash
-git clone <repo-url>
-cd JuED
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+At the moment, install JuED directly from GitHub:
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/rh996/JuED.git")
 ```
 
-The repository now includes a standard `Project.toml`, package entrypoint at
-`src/JuED.jl`, and canonical package test runner at `test/runtests.jl`.
+Then load it with:
 
-## Basic Usage
+```julia
+using JuED
+```
+
+## Quick Start
 
 ```julia
 using JuED
@@ -28,6 +31,7 @@ using JuED
 nparticle = 2
 Nkx = 2
 Nky = 2
+
 onebody = zeros(Float64, 4, 4)
 twobody = zeros(Float64, 4, 4, 4, 4)
 
@@ -39,53 +43,74 @@ ground_energy = result.values[1]
 ground_vector = result.vectors[1]
 
 rdm1 = RDM1(model, ground_vector, 0)
-rdm2_compact = RDM2(model, ground_vector, 0; representation=:compact)
+rdm2 = RDM2(model, ground_vector, 0; representation=:compact)
 ```
 
-Backward-compatible wrappers such as `InputModel`, `DiagonalizeOneMomentum`, and
-`DiagonalizeAllMomentum` are still available, but the preferred public API is:
+For repeated work in the same momentum sector, reuse a workspace:
 
-- unified basis-space namespace:
-  `BasisSpaces`
-- explicit model constructors:
-  `SpinlessListModel`, `SpinlessMomentumModel`, `SpinfulListModel`,
-  `SpinfulMomentumModel`, `TwoBandModel`
-- reusable solver pipeline:
-  `BuildSector`, `BuildOperator`, `SolveSector`, `SolveAllSectors`
-- configurable solver settings:
-  `SolverConfig`
+```julia
+workspace = RDMWorkspace(model, 0)
+rdm3_compact = RDM3Compact(workspace, ground_vector)
+```
 
-## Test Workflow
+If you want to persist compact higher-body RDMs:
 
-Run the maintained package regression suite with:
+```julia
+workspace = RDMWorkspace(model, 0)
+file = compact_rdm_filename(workspace, 3)
+RDM3Compact(workspace, ground_vector; savefile=file)
+rdm3_loaded = load_compact_rdm3(workspace; file=file)
+rdm3_dense = todense(rdm3_loaded)
+```
+
+## Public API
+
+The preferred package surface is:
+
+- `BasisSpaces` for Hilbert-space types and basis builders
+- `SpinlessListModel`, `SpinlessMomentumModel`, `SpinfulListModel`,
+  `SpinfulMomentumModel`, `TwoBandModel` for explicit model construction
+- `BuildSector`, `BuildOperator`, `SolveSector`, `SolveAllSectors` for the
+  reusable solve pipeline
+- `SolverConfig` for eigensolver settings
+- `RDMWorkspace`, `RDM1`, `RDM2`, `RDM3`, `RDM2Compact`, `RDM3Compact` for
+  reduced-density-matrix workflows
+
+Backward-compatible wrappers such as `InputModel`,
+`DiagonalizeOneMomentum`, and `DiagonalizeAllMomentum` are still available.
+
+## Development
+
+For local development:
+
+```bash
+git clone git@github.com:rh996/JuED.git
+cd JuED
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+Run the maintained test suite with:
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-This executes `test/runtests.jl`, which covers the maintained regression tests
-for:
+Run the maintained benchmark harness with:
 
-- Hilbert-space refactors
-- fermion-operator kernels
-- Hamiltonian sparse vs matrix-free parity
-- RDM workspace and compact paths
-- public API regression
+```bash
+julia --project=. benchmarks/runbenchmarks.jl
+```
 
-The `tests/` directory still contains older exploratory scripts and model-
-specific experiments. Those are useful for local investigation, but they are
-not the canonical package test suite.
+See `CONTRIBUTING.md` for the development workflow and
+`benchmarks/TARGETS.md` for the maintained benchmark workloads.
 
-## Repository Layout
+Build the local documentation site with:
 
-- `src/JuED.jl`: package entrypoint
-- `src/EDMain.jl`: public ED API and compatibility wrappers
-- `src/BasisSpaces.jl`: canonical basis-space namespace and builders
-- `src/HamiltonianConstructor.jl`: sparse and matrix-free Hamiltonian builders
-- `src/DensityMatrices.jl`: RDM workspace and compact/dense RDM paths
-- `test/runtests.jl`: canonical package test runner
-- `tests/`: maintained regression files plus older exploratory scripts
+```bash
+julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+julia --project=docs docs/make.jl
+```
 
-## Development
+## License
 
-See `CONTRIBUTING.md` for the expected development workflow.
+JuED is distributed under the MIT License. See `LICENSE`.

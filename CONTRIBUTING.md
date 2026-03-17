@@ -16,9 +16,28 @@ Run the maintained package regression suite with:
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-This executes `test/runtests.jl`. The scripts under `tests/` are still useful
-for local experiments, but they are not all part of the maintained package
-suite.
+This executes `test/runtests.jl` and is the only maintained package test suite.
+
+## Benchmark Command
+
+Run the maintained benchmark harness with:
+
+```bash
+julia --project=. benchmarks/runbenchmarks.jl
+```
+
+This writes a Markdown summary and TSV table under `benchmarks/results/`. Use
+`benchmarks/TARGETS.md` as the reference workload list and soft-envelope guide
+when comparing runs.
+
+## Documentation
+
+Build the local documentation site with:
+
+```bash
+julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+julia --project=docs docs/make.jl
+```
 
 ## Development Notes
 

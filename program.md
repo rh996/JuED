@@ -232,15 +232,47 @@ Completed in the current branch:
    verifies that `EDMod` is no longer exported from the package surface, and
    exercises the unified basis builders and state-index mapping through the new
    namespace.
+40. Added file-backed compact RDM persistence for the Phase 6 follow-up scope.
+   `DensityMatrices.jl` now supports `compact_rdm_filename(...)`,
+   `save_compact_rdm(...)`, `load_compact_rdm2(...)`, and
+   `load_compact_rdm3(...)`, and `RDM2Compact(...)` / `RDM3Compact(...)` can
+   write compact RDM data directly while preserving workspace metadata for
+   validation on reload.
+41. Added compact-RDM round-trip regression coverage.
+   `tests/test_density_matrix_refactor.jl` now checks compact `RDM2`/`RDM3`
+   save-load round-tripping, public package exports for the new helpers, model-
+   level savefile wrappers, and metadata-mismatch failures for the persisted
+   compact payloads.
+42. Started Phase 7 with a maintained `BenchmarkTools` suite.
+   `benchmarks/runbenchmarks.jl` now benchmarks the typed fermion kernel,
+   representative basis generation workloads, sparse Hamiltonian assembly,
+   sparse vs matrix-free eigensolves, and compact `RDM1`/`RDM2`/`RDM3`
+   workloads through one canonical runner.
+43. Added benchmark workload and envelope documentation.
+   `benchmarks/TARGETS.md` records the maintained workload list plus current
+   soft runtime/memory envelopes, and `CONTRIBUTING.md` now documents the
+   canonical benchmark command and output files.
+44. Split the former `EDMain` monolith into explicit internal and public
+    modules.
+   `Internal.jl` now owns the subsystem include graph, `PublicAPI.jl` owns the
+   package-facing model/solver API, and `EDMain.jl` is now a compatibility
+   facade that re-exports those layers for older `EDMod` consumers.
+45. Added regression coverage for the new module split.
+   `tests/test_phase1_namespace.jl` now checks that the compatibility layer
+   exposes both `InternalMod` and `PublicAPIMod` while `JuED` continues to
+   export only the intended package-facing API.
+46. Reduced the remaining solve-layer API repetition in `PublicAPI.jl`.
+   Shared helpers now construct sector Hilbert spaces, sparse operators, and
+   the common `DiagonalizeAllMomentum(...)` flow instead of repeating the same
+   branching logic across the spinless, spinful, and two-band entry points.
 
 Still pending:
 
-1. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
-   repetition across the diagonalization entry points.
-2. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
-   a more scalable on-disk format for large compact RDM objects and any later
-   API ergonomics around those compact representations.
-3. Phase 7 benchmark and allocation work.
+1. Broader API ergonomics cleanup in the public solve/model layer beyond the
+   current deduplication pass.
+2. Later API ergonomics around compact RDM-first workflows, especially if the
+   project wants dense output to stop being the default for higher-body RDMs.
+3. Phase 7 performance tuning beyond the new benchmark/baseline harness.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -482,6 +514,9 @@ The remaining related work now belongs to later phases:
 
 1. Larger benchmark and allocation work belongs to Phase 7.
 2. Broader API cleanup and naming ergonomics belong to Phase 5.
+3. Compact-RDM persistence is now available, so any remaining work in this area
+   is about higher-level workflow ergonomics rather than missing storage
+   infrastructure.
 
 ### Deliverables
 
@@ -497,18 +532,39 @@ The remaining related work now belongs to later phases:
    - sparse eigensolve
    - matrix-free eigensolve
    - `RDM1`, `RDM2`, and `RDM3`
+   Completed for the maintained benchmark suite.
+   `benchmarks/runbenchmarks.jl` now covers the benchmark matrix above and
+   writes canonical summary files under `benchmarks/results/`.
 2. Profile allocations in the operator kernels and sparse assembly loops.
+   Completed for the baseline-reporting scope.
+   The maintained benchmark summary now records median allocated bytes and
+   allocation counts for the kernel, assembly, solve, and RDM workloads.
 3. Preallocate reusable thread-local workspaces for repeated operator
    applications.
 4. Replace repeated `Dict` lookups with denser indexing structures where sector
    ordering makes that possible.
 5. Define target problem sizes and record expected runtime and memory envelopes.
+   Completed for the maintained benchmark suite.
+   `benchmarks/TARGETS.md` records the canonical workloads and current soft
+   runtime/memory envelopes from the benchmark harness.
 
 ### Deliverables
 
-- Benchmark suite
-- Allocation profile baselines
-- Performance targets for future changes
+- Benchmark suite. Completed.
+- Allocation profile baselines. Completed for the maintained workloads.
+- Performance targets for future changes. Completed for the maintained
+  workloads.
+
+### Phase 7 Follow-Up
+
+Phase 7 is in progress.
+The benchmark/baseline infrastructure is now in place, and the remaining work
+is optimization-oriented:
+
+1. Preallocate reusable workspaces in the hottest operator/RDM loops.
+2. Reduce dictionary-lookup pressure where dense indexing is possible.
+3. Re-run the maintained benchmark harness after each optimization slice and
+   update `benchmarks/TARGETS.md` if the canonical envelopes move materially.
 
 ## Phase 8: Testing and Verification
 

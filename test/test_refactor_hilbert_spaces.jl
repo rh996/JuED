@@ -1,14 +1,3 @@
-using Test
-
-if isdefined(Main, :JuED)
-    const EDMod = Main.JuED.EDMod
-    const BasisSpaces = Main.JuED.BasisSpaces
-else
-    include("../src/EDMain.jl")
-    const EDMod = Main.EDMod
-    const BasisSpaces = Main.EDMod.BasisSpaces
-end
-
 @testset "Shared momentum utilities" begin
     @test BasisSpaces.momentum_add_1d(3, 4, 5) == 2
     @test BasisSpaces.momentum_sub_1d(1, 3, 5) == 3
