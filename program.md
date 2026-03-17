@@ -184,6 +184,16 @@ Completed in the current branch:
    `tests/test_fermion_operator.jl` checks reverse-index mapping, pure-kernel
    parity/occupancy behavior, mutable-vs-pure consistency, and signed-width
    edge cases near the maximum supported bit positions.
+29. Finished the Phase 5 reusable ED solve pipeline.
+   `EDMain.jl` now exposes explicit model constructors, a `SolverConfig`
+   object, reusable `BuildSector`, `BuildOperator`, `SolveSector`, and
+   `SolveAllSectors` entry points, and the legacy diagonalization wrappers now
+   route through that shared pipeline instead of duplicating sector logic.
+30. Added focused API-regression coverage for the new solve surface.
+   `tests/test_phase5_api.jl` checks the explicit model constructors, reusable
+   sector solving vs legacy wrappers, all-sector iteration, matrix-free parity,
+   two-band vector saving, and the explicit unsupported-path error for the
+   spinful 6-index model family.
 
 Still pending from the early phases:
 
@@ -331,19 +341,37 @@ The remaining related work now belongs to later phases:
 ## Phase 5: Public API Simplification
 
 1. Replace overload-heavy `InputModel` construction with explicit model types or
-   constructors that make the interaction representation obvious.
+   constructors that make the interaction representation obvious. Completed.
+   `SpinlessListModel`, `SpinlessMomentumModel`, `SpinfulListModel`,
+   `SpinfulMomentumModel`, and `TwoBandModel` are now exported as explicit
+   constructors, while `InputModel` remains as a backward-compatible wrapper.
 2. Split "build basis", "build Hamiltonian", and "solve" into separately callable
-   steps.
+   steps. Completed.
+   `BuildSector`, `BuildOperator`, `SolveSector`, and `SolveAllSectors` now form
+   the reusable public pipeline.
 3. Introduce a solver configuration object for tolerances, number of eigenpairs,
-   return-vectors behavior, and sparse vs matrix-free mode.
+   return-vectors behavior, and sparse vs matrix-free mode. Completed.
+   `SolverConfig` now carries the eigensolver settings instead of scattering
+   them across each diagonalization entry point.
 4. Make sector iteration reusable for all model families rather than duplicating
-   `DiagonalizeAllMomentum` loops.
+   `DiagonalizeAllMomentum` loops. Completed for the currently supported model
+   families.
 
 ### Deliverables
 
 - Smaller, more explicit API surface
 - Reusable sector solver pipeline
 - Clear configuration semantics
+
+### Phase 5 Follow-Up
+
+Phase 5 is complete for the current public-API simplification scope.
+The remaining related work now belongs to later phases:
+
+1. Broader package/test-runner cleanup belongs to Phase 0.
+2. Benchmarking and allocation tuning belong to Phase 7.
+3. Additional unsupported model-family coverage can be added later if new
+   Hamiltonian builders are introduced.
 
 ## Phase 6: Density Matrix Redesign
 
