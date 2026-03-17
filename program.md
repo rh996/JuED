@@ -162,6 +162,14 @@ Completed in the current branch:
    equivalence, cache round-tripping, optimized `RDM3` vs single-threaded
    `RDM3`, and optimized-vs-naive agreement on representative independent RDM2
    and RDM3 elements in small sectors.
+24. Added compact symmetry-reduced RDM representations.
+   `DensityMatrices.jl` now exposes `RDM2Compact(...)`, `RDM3Compact(...)`, and
+   `todense(...)`, so callers that do not need the full dense tensors can work
+   directly with the independent momentum-filtered elements.
+25. Tightened cache validation for the refactored RDM path.
+   Versioned `RDM2` cache files are now validated against model kind, lattice
+   size, particle number, and momentum before use instead of being accepted
+   blindly.
 
 Still pending from the early phases:
 
@@ -169,8 +177,8 @@ Still pending from the early phases:
 2. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
    repetition across the diagonalization entry points.
 3. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
-   better cache invalidation, sparse/symmetry-reduced high-body outputs, and
-   memory-scalable alternatives to dense `norb^4`/`norb^6` tensors.
+   the remaining dense-by-default behavior in the public `RDM2`/`RDM3` APIs and
+   a more scalable on-disk format for large compact RDM objects.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -330,14 +338,19 @@ The remaining related work now belongs to later phases:
    Completed for the current spinless and two-band 2D RDM paths.
 4. Make caching a structured subsystem with explicit filenames, schema versioning,
    and invalidation rules. In progress.
-   `RDM2_cache` now writes a versioned filename and metadata payload while still
-   loading the legacy cache layout for compatibility.
-5. Re-evaluate dense tensor outputs for `RDM2` and `RDM3`.
+   `RDM2_cache` now writes a versioned filename and metadata payload, validates
+   metadata before loading, and still accepts the legacy cache layout for
+   compatibility.
+5. Re-evaluate dense tensor outputs for `RDM2` and `RDM3`. In progress.
+   `RDM2Compact(...)` and `RDM3Compact(...)` now expose the symmetry-reduced
+   independent elements directly, while the existing dense `RDM2(...)` and
+   `RDM3(...)` methods are implemented as `todense(...)` over that compact data.
    For larger systems, expose sparse or symmetry-reduced representations to avoid
    allocating full `norb^4` and `norb^6` tensors when they are not needed.
 6. Add correctness tests that compare optimized RDM code to naive reference
    implementations on small systems. In progress.
    The new regression suite covers workspace-vs-wrapper agreement, cache
+   validation failure, compact-vs-dense reconstruction, cache round-tripping,
    round-tripping, threaded-vs-single-threaded `RDM3`, and optimized-vs-naive
    checks on representative independent RDM2/RDM3 elements.
 

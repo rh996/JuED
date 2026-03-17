@@ -9,7 +9,7 @@ using ..MomentumUtilsMod: momentum_add_2d
 using ..TwoBandMomentumHilbertSpace2DMod
 using JLD2
 
-export RDMWorkspace, RDM1, RDM2, RDM3, RDM3_single_thread, RDM2_cache, RDM3_naive, RDM2_naive
+export RDMWorkspace, CompactRDM2, CompactRDM3, RDM1, RDM2, RDM3, RDM2Compact, RDM3Compact, RDM3_single_thread, RDM2_cache, RDM3_naive, RDM2_naive, todense
 
 const PairTuple = NTuple{2,Int}
 const TripleTuple = NTuple{3,Int}
@@ -31,6 +31,18 @@ struct RDMSectorWorkspace{TH,TS<:Integer,TI<:Integer}
     ind_dict::Dict{TS,TI}
     rdm2_elements::Vector{QuadTuple}
     rdm3_elements::Vector{SextTuple}
+end
+
+struct CompactRDM2{T}
+    norb::Int
+    elements::Vector{QuadTuple}
+    values::Vector{T}
+end
+
+struct CompactRDM3{T}
+    norb::Int
+    elements::Vector{SextTuple}
+    values::Vector{T}
 end
 
 function orbital_pairs(norb::Int)
@@ -249,6 +261,32 @@ function _antisymmetrize_rdm3(rdm3)
     return result
 end
 
+function todense(rdm::CompactRDM2{T}) where {T}
+    dense = zeros(T, rdm.norb, rdm.norb, rdm.norb, rdm.norb)
+    for idx in eachindex(rdm.elements)
+        i, j, k, l = rdm.elements[idx]
+        value = rdm.values[idx]
+        dense[i, j, k, l] += value
+        if (i, j) != (k, l)
+            dense[k, l, i, j] += conj(value)
+        end
+    end
+    return _antisymmetrize_rdm2!(dense)
+end
+
+function todense(rdm::CompactRDM3{T}) where {T}
+    dense = zeros(T, rdm.norb, rdm.norb, rdm.norb, rdm.norb, rdm.norb, rdm.norb)
+    for idx in eachindex(rdm.elements)
+        i, j, k, l, m, n = rdm.elements[idx]
+        value = rdm.values[idx]
+        dense[i, j, k, l, m, n] += value
+        if (i, j, k) != (l, m, n)
+            dense[l, m, n, i, j, k] += conj(value)
+        end
+    end
+    return _antisymmetrize_rdm3(dense)
+end
+
 function RDM1(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
     _check_coefficients(workspace, coeffs)
     norb = workspace.norb
@@ -270,66 +308,92 @@ function RDM1(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T
     return rdm1
 end
 
-function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
+function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
     _check_coefficients(workspace, coeffs)
-    norb = workspace.norb
-    rdm2_final = zeros(T, norb, norb, norb, norb)
+    values = zeros(T, length(workspace.rdm2_elements))
     nthreads_total = Threads.nthreads()
-    rdm2_thread = [zeros(T, norb, norb, norb, norb) for _ in 1:nthreads_total]
+    thread_values = [zeros(T, length(workspace.rdm2_elements)) for _ in 1:nthreads_total]
     Threads.@threads for t in 1:nthreads_total
         tid = Threads.threadid()
         start_idx, end_idx = _chunk_bounds(length(workspace.hilbert), nthreads_total, t)
-        local_rdm2 = rdm2_thread[tid]
+        local_values = thread_values[tid]
         @inbounds for right in start_idx:end_idx
             state = workspace.hilbert[right]
-            for element in workspace.rdm2_elements
-                i, j, k, l = element
+            for element_idx in eachindex(workspace.rdm2_elements)
+                i, j, k, l = workspace.rdm2_elements[element_idx]
                 transition = _lookup_rdm2_transition(workspace, state, i, j, k, l)
                 transition === nothing && continue
                 left, sign = transition
-                value = _transition_value(coeffs, right, left, sign)
-                local_rdm2[i, j, k, l] += value
-                if (i, j) != (k, l)
-                    local_rdm2[k, l, i, j] += conj(value)
-                end
+                local_values[element_idx] += _transition_value(coeffs, right, left, sign)
             end
         end
     end
-    for local_rdm2 in rdm2_thread
-        rdm2_final .+= local_rdm2
+    for local_values in thread_values
+        values .+= local_values
     end
-    return _antisymmetrize_rdm2!(rdm2_final)
+    return CompactRDM2(workspace.norb, workspace.rdm2_elements, values)
 end
 
-function _load_rdm2_cache_entries(file::String, momentum::Int)
-    payload = load(file)
+function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
+    return todense(RDM2Compact(workspace, coeffs))
+end
+
+function _load_rdm2_cache_payload(file::String)
+    return load(file)
+end
+
+function _validate_rdm2_cache_payload!(workspace::RDMSectorWorkspace, payload)
+    if get(payload, "schema_version", Int32(-1)) != Int32(RDM2_CACHE_SCHEMA_VERSION)
+        throw(ArgumentError("RDM2 cache schema version mismatch for workspace $(workspace.kind)."))
+    end
+    if get(payload, "cache_kind", "") != "rdm2"
+        throw(ArgumentError("Unsupported cache payload kind for RDM2 cache file."))
+    end
+    if get(payload, "model_kind", "") != String(workspace.kind)
+        throw(ArgumentError("RDM2 cache model kind does not match the requested workspace."))
+    end
+    if get(payload, "Nkx", Int32(-1)) != Int32(workspace.Nkx) || get(payload, "Nky", Int32(-1)) != Int32(workspace.Nky)
+        throw(ArgumentError("RDM2 cache lattice dimensions do not match the requested workspace."))
+    end
+    if get(payload, "momentum", Int32(-1)) != Int32(workspace.momentum)
+        throw(ArgumentError("RDM2 cache momentum does not match the requested workspace."))
+    end
+    if get(payload, "nparticle", Int32(-1)) != Int32(workspace.nparticle)
+        throw(ArgumentError("RDM2 cache particle number does not match the requested workspace."))
+    end
+    return nothing
+end
+
+function _load_rdm2_cache_entries(workspace::RDMSectorWorkspace, file::String)
+    payload = _load_rdm2_cache_payload(file)
     if haskey(payload, "entries")
+        _validate_rdm2_cache_payload!(workspace, payload)
         return payload["entries"], false
     end
-    return payload["k_$(momentum)"], true
+    return payload["k_$(workspace.momentum)"], true
 end
 
-function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, file::String) where {T}
+function RDM2Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, file::String) where {T}
     _check_coefficients(workspace, coeffs)
-    rdm2 = zeros(T, workspace.norb, workspace.norb, workspace.norb, workspace.norb)
-    entries, is_legacy_layout = _load_rdm2_cache_entries(file, workspace.momentum)
+    values = zeros(T, length(workspace.rdm2_elements))
+    element_to_index = Dict{QuadTuple,Int}()
+    for idx in eachindex(workspace.rdm2_elements)
+        element_to_index[workspace.rdm2_elements[idx]] = idx
+    end
+    entries, is_legacy_layout = _load_rdm2_cache_entries(workspace, file)
     for (key, value) in entries
         i, j, k, l, right = key
         left, sign = value
-        contribution = _transition_value(coeffs, right, left, sign)
-        if is_legacy_layout
-            rdm2[i, j, l, k] += contribution
-            if (i, j) != (l, k)
-                rdm2[l, k, i, j] += conj(contribution)
-            end
-        else
-            rdm2[i, j, k, l] += contribution
-            if (i, j) != (k, l)
-                rdm2[k, l, i, j] += conj(contribution)
-            end
+        element = is_legacy_layout ? (Int(i), Int(j), Int(l), Int(k)) : (Int(i), Int(j), Int(k), Int(l))
+        if haskey(element_to_index, element)
+            values[element_to_index[element]] += _transition_value(coeffs, right, left, sign)
         end
     end
-    return _antisymmetrize_rdm2!(rdm2)
+    return CompactRDM2(workspace.norb, workspace.rdm2_elements, values)
+end
+
+function RDM2(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}, file::String) where {T}
+    return todense(RDM2Compact(workspace, coeffs, file))
 end
 
 function rdm2_cache_filename(workspace::RDMSectorWorkspace; dir::String="./data")
@@ -382,6 +446,14 @@ function RDM2(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momen
     return RDM2(RDMWorkspace(model, momentum), coeffs)
 end
 
+function RDM2Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
+    return RDM2Compact(RDMWorkspace(model, momentum), coeffs)
+end
+
+function RDM2Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int, file::String) where {T}
+    return RDM2Compact(RDMWorkspace(model, momentum), coeffs, file)
+end
+
 function RDM2_cache(model::ModelParams2DSpinlessList, momentum::Int)
     return RDM2_cache(RDMWorkspace(model, momentum))
 end
@@ -398,42 +470,49 @@ function RDM2(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::
     return RDM2(RDMWorkspace(model, momentum), coeffs)
 end
 
-function RDM3(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
+function RDM2Compact(model::ModelParams2DTwoBand, coeffs::AbstractVector{T}, momentum::Int) where {T}
+    return RDM2Compact(RDMWorkspace(model, momentum), coeffs)
+end
+
+function RDM3Compact(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
     _check_coefficients(workspace, coeffs)
     if workspace.kind != :spinless_2d
         throw(ArgumentError("RDM3 is currently only implemented for the spinless 2D workspace."))
     end
-    norb = workspace.norb
-    rdm3_final = zeros(T, norb, norb, norb, norb, norb, norb)
+    values = zeros(T, length(workspace.rdm3_elements))
     nthreads_total = Threads.nthreads()
-    rdm3_thread = [zeros(T, norb, norb, norb, norb, norb, norb) for _ in 1:nthreads_total]
+    thread_values = [zeros(T, length(workspace.rdm3_elements)) for _ in 1:nthreads_total]
     Threads.@threads for t in 1:nthreads_total
         tid = Threads.threadid()
         start_idx, end_idx = _chunk_bounds(length(workspace.hilbert), nthreads_total, t)
-        local_rdm3 = rdm3_thread[tid]
+        local_values = thread_values[tid]
         @inbounds for right in start_idx:end_idx
             state = workspace.hilbert[right]
-            for element in workspace.rdm3_elements
-                i, j, k, l, m, n = element
+            for element_idx in eachindex(workspace.rdm3_elements)
+                i, j, k, l, m, n = workspace.rdm3_elements[element_idx]
                 transition = _lookup_rdm3_transition(workspace, state, i, j, k, l, m, n)
                 transition === nothing && continue
                 left, sign = transition
-                value = _transition_value(coeffs, right, left, sign)
-                local_rdm3[i, j, k, l, m, n] += value
-                if (i, j, k) != (l, m, n)
-                    local_rdm3[l, m, n, i, j, k] += conj(value)
-                end
+                local_values[element_idx] += _transition_value(coeffs, right, left, sign)
             end
         end
     end
-    for local_rdm3 in rdm3_thread
-        rdm3_final .+= local_rdm3
+    for local_values in thread_values
+        values .+= local_values
     end
-    return _antisymmetrize_rdm3(rdm3_final)
+    return CompactRDM3(workspace.norb, workspace.rdm3_elements, values)
+end
+
+function RDM3(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
+    return todense(RDM3Compact(workspace, coeffs))
 end
 
 function RDM3(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
     return RDM3(RDMWorkspace(model, momentum), coeffs)
+end
+
+function RDM3Compact(model::ModelParams2DSpinlessList, coeffs::AbstractVector{T}, momentum::Int) where {T}
+    return RDM3Compact(RDMWorkspace(model, momentum), coeffs)
 end
 
 function RDM3_single_thread(workspace::RDMSectorWorkspace, coeffs::AbstractVector{T}) where {T}
