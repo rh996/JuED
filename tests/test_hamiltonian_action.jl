@@ -2,8 +2,12 @@ using Test
 using LinearAlgebra
 using SparseArrays
 
-include("../src/EDMain.jl")
-using .EDMod
+if isdefined(Main, :JuED)
+    const EDMod = Main.JuED.EDMod
+else
+    include("../src/EDMain.jl")
+    const EDMod = Main.EDMod
+end
 
 @testset "List Hamiltonian action matches sparse CSC" begin
     nparticle = 2

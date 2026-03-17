@@ -206,19 +206,32 @@ Still pending from the early phases:
 
 ## Phase 0: Package and Repository Hygiene
 
-1. Add a standard `Project.toml` and package metadata.
+1. Add a standard `Project.toml` and package metadata. Completed.
+   The repository now has a package entry point at `src/JuED.jl`, explicit
+   dependencies in `Project.toml`, and a checked-in `Manifest.toml` for
+   reproducible local development.
 2. Create a single test entry point under Julia's standard `test/` layout, or
-   standardize the existing `tests/` folder with a master runner.
+   standardize the existing `tests/` folder with a master runner. Completed.
+   `test/runtests.jl` is now the canonical package test runner, and the
+   maintained regression files can be run both directly and through `Pkg.test`.
 3. Define development dependencies explicitly, including `KrylovKit`,
-   `ProgressMeter`, `JLD2`, and any benchmarking tools.
+   `ProgressMeter`, `JLD2`, and any benchmarking tools. Completed for the
+   current maintained suite.
+   The active package environment now declares the runtime and test
+   dependencies needed by the maintained regression tests. Benchmarking tools
+   can be added later as part of Phase 7 rather than the baseline package
+   setup.
 4. Add a short contributor note that explains the expected package workflow,
-   test commands, and performance-check workflow.
+   test commands, and performance-check workflow. Completed.
+   `README.md` and `CONTRIBUTING.md` now describe installation, the preferred
+   public API, the canonical test command, and the distinction between the
+   package suite and older exploratory scripts in `tests/`.
 
 ### Deliverables
 
-- Standard package metadata
-- Reproducible environment setup
-- One command to run the whole test suite
+- Standard package metadata. Completed.
+- Reproducible environment setup. Completed.
+- One command to run the whole test suite. Completed.
 
 ## Phase 1: Module Boundary Cleanup
 
@@ -481,7 +494,7 @@ will have to be repeated in several places.
 These are the highest-leverage changes to start with:
 
 1. Remove the duplicate 2D momentum module definitions. Completed.
-2. Standardize the package structure and test entry point. In progress.
+2. Standardize the package structure and test entry point. Completed.
 3. Unify the DFS basis builders behind one generic implementation.
 4. Normalize integer and container types across basis states and sparse data.
 5. Extract shared Hamiltonian assembly scaffolding.

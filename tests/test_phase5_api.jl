@@ -1,8 +1,12 @@
 using Test
 using LinearAlgebra
 
-include("../src/EDMain.jl")
-using .EDMod
+if isdefined(Main, :JuED)
+    const EDMod = Main.JuED.EDMod
+else
+    include("../src/EDMain.jl")
+    const EDMod = Main.EDMod
+end
 
 @testset "Explicit model constructors choose concrete types" begin
     onebody4 = zeros(Float64, 4, 4)
