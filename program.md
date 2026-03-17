@@ -174,6 +174,16 @@ Completed in the current branch:
    `RDM2(...)` and `RDM3(...)` now support `representation=:dense` or
    `representation=:compact`, and `EDMain.jl` exports the workspace, compact
    RDM, and reconstruction APIs directly.
+27. Finished the Phase 3 fermion-kernel cleanup.
+   `FermionOperator.jl` now uses a typed `FermionOperator{T}` state container,
+   exports pure `creation_kernel`, `annihilation_kernel`, and
+   `apply_operator_string` helpers, documents the basis-site reverse mapping via
+   `basis_site_index(...)`, and the Hamiltonian/RDM hot paths now call those
+   pure kernels directly.
+28. Added focused fermion sign-convention tests.
+   `tests/test_fermion_operator.jl` checks reverse-index mapping, pure-kernel
+   parity/occupancy behavior, mutable-vs-pure consistency, and signed-width
+   edge cases near the maximum supported bit positions.
 
 Still pending from the early phases:
 
@@ -182,7 +192,7 @@ Still pending from the early phases:
    repetition across the diagonalization entry points.
 3. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
    a more scalable on-disk format for large compact RDM objects and any later
-   typed-fermion cleanup that is shared with Phase 3.
+   API ergonomics around those compact representations.
 
 ## Phase 0: Package and Repository Hygiene
 
@@ -266,18 +276,26 @@ The remaining follow-up items now belong to later phases:
 ## Phase 3: Fermion Operator Kernel Cleanup
 
 1. Generalize `FermionOperator` over the state integer type instead of hardcoding
-   `Int64`.
-2. Separate pure operator kernels from mutable convenience wrappers.
+   `Int64`. Completed.
+2. Separate pure operator kernels from mutable convenience wrappers. Completed.
 3. Add micro-tests for creation/annihilation parity, occupancy checks, and
-   corner cases near the maximum supported bit width.
+   corner cases near the maximum supported bit width. Completed.
 4. Document the basis ordering convention and reverse-index mapping currently
-   embedded throughout the code.
+   embedded throughout the code. Completed.
 
 ### Deliverables
 
 - Typed fermion operator kernel
 - Explicit basis-ordering documentation
 - Unit tests for sign conventions
+
+### Phase 3 Follow-Up
+
+Phase 3 is complete for the current fermion-kernel scope.
+The remaining related work now belongs to later phases:
+
+1. Broader API cleanup and naming ergonomics belong to Phase 5.
+2. Allocation and benchmarking work belongs to Phase 7.
 
 ## Phase 4: Hamiltonian Construction Refactor
 
@@ -337,8 +355,8 @@ The remaining related work now belongs to later phases:
 2. Factor out the shared operator-application pattern used by `RDM1`, `RDM2`,
    `RDM3`, and cache generation. Completed for the current RDM subsystem.
    The duplicated fermion-operator loops were collapsed into shared transition
-   helpers. The remaining typed-fermion work is now explicitly tracked under
-   Phase 3 rather than blocking the RDM redesign.
+   helpers. The underlying typed fermion-kernel cleanup was completed in
+   Phase 3 and no longer blocks the RDM subsystem.
 3. Replace ad hoc tuple-generation code with reusable momentum-filter utilities.
    Completed for the current spinless and two-band 2D RDM paths.
 4. Make caching a structured subsystem with explicit filenames, schema versioning,
@@ -366,9 +384,8 @@ The remaining related work now belongs to later phases:
 Phase 6 is complete for the current RDM architecture scope.
 The remaining related work now belongs to later phases:
 
-1. Typed fermion-state kernels remain in Phase 3.
-2. Larger benchmark and allocation work belongs to Phase 7.
-3. Broader API cleanup and naming ergonomics belong to Phase 5.
+1. Larger benchmark and allocation work belongs to Phase 7.
+2. Broader API cleanup and naming ergonomics belong to Phase 5.
 
 ### Deliverables
 

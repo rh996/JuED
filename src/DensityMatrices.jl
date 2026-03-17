@@ -71,7 +71,6 @@ end
 
 @inline spinless_orbital_momentum(i::Int) = i - 1
 @inline twoband_orbital_momentum(i::Int) = fld(i - 1, 2)
-@inline internal_site(norb::Int, site::Int) = Int64(norb - site + 1)
 
 function momentum_sum_2d(indices::Tuple, orbital_momentum, Nkx::Int, Nky::Int)
     total = 0
@@ -189,25 +188,10 @@ function _check_coefficients(workspace::RDMSectorWorkspace, coeffs::AbstractVect
     end
 end
 
-function _apply_operator_string(::Type{TS}, state::TS, norb::Int, creation_sites::Tuple, annihilation_sites::Tuple) where {TS<:Integer}
-    fermion = FermionOperator(Int64(state), 1)
-    for site in annihilation_sites
-        AnnihilationOperator!(fermion, internal_site(norb, site))
-        if fermion.fermion_sign == 0
-            return nothing
-        end
-    end
-    for site in creation_sites
-        CreationOperator!(fermion, internal_site(norb, site))
-        if fermion.fermion_sign == 0
-            return nothing
-        end
-    end
-    return TS(fermion.state), Int8(fermion.fermion_sign)
-end
-
 function _lookup_transition(workspace::RDMSectorWorkspace{<:Any,TS}, state::TS, creation_sites::Tuple, annihilation_sites::Tuple) where {TS<:Integer}
-    result = _apply_operator_string(TS, state, workspace.norb, creation_sites, annihilation_sites)
+    internal_creation_sites = map(site -> basis_site_index(workspace.norb, site), creation_sites)
+    internal_annihilation_sites = map(site -> basis_site_index(workspace.norb, site), annihilation_sites)
+    result = apply_operator_string(state, internal_creation_sites, internal_annihilation_sites)
     result === nothing && return nothing
     left_state, sign = result
     if !haskey(workspace.ind_dict, left_state)

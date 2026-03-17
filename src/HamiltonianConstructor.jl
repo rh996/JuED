@@ -34,18 +34,14 @@ function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}
     for i in 1:ndim
         for j in 1:ndim
             for state_ind in eachindex(hilbert)
-                fermion = FermionOperator(hilbert[state_ind], 1)
-                AnnihilationOperator!(fermion, j)
-                if fermion.fermion_sign == 0
+                result = apply_operator_string(hilbert[state_ind], (i,), (j,))
+                if result === nothing
                     continue
                 end
-                CreationOperator!(fermion, i)
-                if fermion.fermion_sign == 0
-                    continue
-                end
-                push!(data, OneBody[i, j] * fermion.fermion_sign)
+                next_state, sign = result
+                push!(data, OneBody[i, j] * sign)
                 push!(column, state_ind)
-                push!(row, ind_dict[fermion.state])
+                push!(row, ind_dict[next_state])
             end
         end
     end
@@ -55,26 +51,14 @@ function GeneralHamiltonian(OneBody::Array{Float64,2}, TwoBody::Array{Float64,4}
             for k in 1:ndim
                 for l in 1:ndim
                     for state_ind in eachindex(hilbert)
-                        fermion1 = FermionOperator(hilbert[state_ind], 1)
-                        AnnihilationOperator!(fermion1, k)
-                        if fermion1.fermion_sign == 0
+                        result = apply_operator_string(hilbert[state_ind], (j, i), (k, l))
+                        if result === nothing
                             continue
                         end
-                        AnnihilationOperator!(fermion1, l)
-                        if fermion1.fermion_sign == 0
-                            continue
-                        end
-                        CreationOperator!(fermion1, j)
-                        if fermion1.fermion_sign == 0
-                            continue
-                        end
-                        CreationOperator!(fermion1, i)
-                        if fermion1.fermion_sign == 0
-                            continue
-                        end
-                        push!(data, TwoBody[i, j, k, l] * fermion1.fermion_sign)
+                        next_state, sign = result
+                        push!(data, TwoBody[i, j, k, l] * sign)
                         push!(column, state_ind)
-                        push!(row, ind_dict[fermion1.state])
+                        push!(row, ind_dict[next_state])
                     end
                 end
             end
@@ -96,7 +80,7 @@ function _onebody_channels(OneBody)
     for ind in findall(x -> abs(x) > 1e-10, OneBody)
         i = ind[1]
         j = ind[2]
-        push!(channels, OneBodyChannel((norbital - j) + 1, (norbital - i) + 1, OneBody[i, j]))
+        push!(channels, OneBodyChannel(basis_site_index(norbital, j), basis_site_index(norbital, i), OneBody[i, j]))
     end
     return channels
 end
@@ -109,7 +93,7 @@ function _list_twobody_channels(Eri)
         j = ind[2]
         k = ind[3]
         l = ind[4]
-        push!(channels, TwoBodyChannel((norbital - k) + 1, (norbital - l) + 1, (norbital - j) + 1, (norbital - i) + 1, Eri[i, j, k, l]))
+        push!(channels, TwoBodyChannel(basis_site_index(norbital, k), basis_site_index(norbital, l), basis_site_index(norbital, j), basis_site_index(norbital, i), Eri[i, j, k, l]))
     end
     return channels
 end
@@ -155,37 +139,21 @@ function _hamiltonian_channels(OneBody, Eri::Array{T,6}, hilbertspace) where {T}
 end
 
 @inline function _apply_onebody_channel(state, channel::OneBodyChannel)
-    fermion = FermionOperator(state, 1)
-    AnnihilationOperator!(fermion, channel.annihilate)
-    if fermion.fermion_sign == 0
+    result = apply_operator_string(state, (channel.create,), (channel.annihilate,))
+    if result === nothing
         return 0, state
     end
-    CreationOperator!(fermion, channel.create)
-    if fermion.fermion_sign == 0
-        return 0, state
-    end
-    return fermion.fermion_sign, fermion.state
+    next_state, sign = result
+    return sign, next_state
 end
 
 @inline function _apply_twobody_channel(state, channel::TwoBodyChannel)
-    fermion = FermionOperator(state, 1)
-    AnnihilationOperator!(fermion, channel.annihilate1)
-    if fermion.fermion_sign == 0
+    result = apply_operator_string(state, (channel.create1, channel.create2), (channel.annihilate1, channel.annihilate2))
+    if result === nothing
         return 0, state
     end
-    AnnihilationOperator!(fermion, channel.annihilate2)
-    if fermion.fermion_sign == 0
-        return 0, state
-    end
-    CreationOperator!(fermion, channel.create1)
-    if fermion.fermion_sign == 0
-        return 0, state
-    end
-    CreationOperator!(fermion, channel.create2)
-    if fermion.fermion_sign == 0
-        return 0, state
-    end
-    return fermion.fermion_sign, fermion.state
+    next_state, sign = result
+    return sign, next_state
 end
 
 @inline function _count_connected_terms(state, onebody_channels, twobody_channels)
