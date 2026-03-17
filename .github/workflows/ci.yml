@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - codex/refactor-program
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+
+      - name: Cache Julia artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.julia/artifacts
+            ~/.julia/compiled
+            ~/.julia/packages
+          key: ${{ runner.os }}-julia-${{ hashFiles('Project.toml', 'Manifest.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-julia-
+
+      - name: Instantiate project
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Run package tests
+        run: julia --project=. -e 'using Pkg; Pkg.test()'

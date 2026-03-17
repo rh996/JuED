@@ -1,0 +1,586 @@
+# JuED Refactor Program
+
+## Purpose
+
+This document turns the current codebase shortcomings into an implementation plan.
+The goal is to make JuED easier to maintain, safer to extend, and faster on the
+large exact-diagonalization workloads it targets.
+
+## Main Problems Observed
+
+1. Module structure is inconsistent.
+   The entry module includes both `src/MomentumHilbertSpace2D_cache.jl` and
+   `src/MomentumHilbertSpace2D.jl`, and both define `MomentumHilbertSpace2DMod`.
+   This creates shadowing risk and makes it unclear which implementation is
+   active.
+
+2. The codebase is not organized as a standard Julia package.
+   There is no visible `Project.toml`, and the tests are individual scripts
+   rather than a conventional package test suite with shared fixtures and a
+   single entry point.
+
+3. The same algorithms are reimplemented many times.
+   Momentum helpers, DFS basis builders, spin/two-band combiners, and
+   diagonalization loops are duplicated across multiple files with minor
+   variations.
+
+4. Type usage is inconsistent and sometimes unsafe.
+   The code mixes `Int32`, `Int64`, `UInt32`, `UInt64`, and hard-coded `Int64`
+   state containers. Some arrays are built from `[]`, which can introduce `Any`
+   or weak inference. In `Hamiltonian_list_constructor`, `row` is allocated with
+   a dynamic pointer type but later filled via `Int32(...)`.
+
+5. Hamiltonian assembly is correct in spirit but inefficient.
+   Sparse construction repeatedly allocates temporary fermion objects, performs
+   many dictionary lookups, and duplicates nearly the same two-pass CSC logic
+   for different model types.
+
+6. Progress reporting is threaded into hot loops.
+   `ProgressMeter.next!` is called from inside threaded loops, which is not part
+   of the scientific algorithm and can distort performance or complicate
+   parallel execution.
+
+7. RDM routines are the largest maintainability and scalability risk.
+   `RDM1`, `RDM2`, and especially `RDM3` rebuild Hilbert spaces internally,
+   allocate very large dense tensors, enumerate large operator index sets in
+   ad hoc ways, and repeat the same operator-application pattern with slight
+   variations.
+
+8. Algorithm selection is coupled to data layout.
+   The distinction between 4-index sparse interaction lists and 6-index momentum
+   tensors is encoded by overloaded entry points rather than by explicit
+   operator/model abstractions.
+
+9. The public API is thin and the internal boundaries are weak.
+   Entry-point functions directly choose index width, build Hilbert spaces,
+   assemble sparse matrices, and invoke eigensolvers. That makes the code harder
+   to profile, test, and reuse.
+
+10. Performance validation infrastructure is missing.
+    The repository has useful exploratory tests, but no benchmark suite, no
+    profiling workflow, and no acceptance thresholds for large-sector runs.
+
+## Refactor Goals
+
+1. Establish one clear package/module layout.
+2. Remove duplicate implementations and centralize shared algorithms.
+3. Make basis generation, operator application, Hamiltonian assembly, and RDM
+   evaluation explicit subsystems with stable interfaces.
+4. Improve type stability and remove avoidable allocations.
+5. Preserve current physics results while making large runs cheaper.
+6. Add tests and benchmarks that detect correctness regressions and performance
+   regressions.
+
+## Program Overview
+
+The work should be done in phases. Earlier phases reduce structural risk.
+Later phases optimize the hot paths after the architecture is stable.
+
+## Progress Update
+
+Completed in the current branch:
+
+1. Resolved the duplicate 2D momentum module path.
+   `MomentumHilbertSpace2D_cache.jl` was removed and its memoized DFS logic was
+   folded into the canonical `MomentumHilbertSpace2D.jl`.
+2. Introduced a shared momentum utility module.
+   `MomentumUtils.jl` now provides the canonical 1D and 2D momentum addition and
+   subtraction helpers, and the basis modules import/re-export those functions.
+3. Introduced a shared basis-builder module.
+   `BasisBuilders.jl` now owns the generic particle-number DFS and the generic
+   momentum-constrained DFS used by the 1D, 2D, spinful, and two-band Hilbert
+   spaces.
+4. Tightened several weakly typed Hilbert-space accumulators.
+   The spinful and two-band basis combiners now initialize typed vectors instead
+   of starting from bare `[]`.
+5. Introduced explicit state and sparse-index helper utilities.
+   `IndexTypes.jl` now centralizes state-width selection and sparse pointer-width
+   selection, replacing repeated `if ... > 31` logic in the entry points and
+   removing the unsigned pointer split in sparse Hamiltonian assembly.
+6. Exposed explicit cache policy in the shared basis API.
+   The shared basis builders and the public Hilbert-space builders now support
+   `use_cache=true/false`, so memoization is no longer an implicit hidden choice.
+7. Converted the remaining Phase 2 RDM helper collections to typed structures.
+   Pair lists, triple lists, momentum-conserving index sets, and the `RDM2`
+   cache dictionaries now use explicit tuple and pointer types instead of ad hoc
+   dynamic containers.
+8. Added focused structured regression tests for exact basis contents and cache
+   policy behavior.
+   The refactor test suite now checks cached vs uncached basis equality and
+   exact small-basis contents for representative spinless and spinful cases.
+9. Added a constructor-level verification pass after the type cleanup.
+   `tests/test_list_constructor.jl` was rerun after the sparse pointer changes
+   to confirm the Hamiltonian list-construction path still works.
+10. Added a focused structured regression test.
+   `tests/test_refactor_hilbert_spaces.jl` verifies the shared momentum helpers
+   and checks that the refactored sector builders still partition the spinless,
+   spinful, and two-band Hilbert spaces correctly on small systems.
+11. Repaired the standalone 1D Hilbert-space test harness.
+   `tests/test_hilbert_k1d.jl` now loads through `EDMain.jl`, so its dependency
+   chain matches the actual module layout.
+12. Started Phase 4 by unifying the sparse CSC assembly scaffold.
+   `HamiltonianConstructor.jl` now uses one shared threaded two-pass CSC engine
+   for both the 4-index list constructor and the 6-index momentum constructor,
+   instead of duplicating the count/prefix/fill framework.
+13. Removed `ProgressMeter` calls from the Hamiltonian-constructor hot loops.
+   The constructor-level threaded loops no longer update progress bars while
+   counting/filling CSC data.
+14. Replaced duplicated operator-application bodies with shared channel kernels.
+   One-body and two-body transitions are now represented by shared channel
+   structs and applied through common operator helpers for both sparse and
+   matrix-free paths.
+15. Precomputed reusable scattering channels for the 6-index momentum path.
+   The momentum constructor now builds only nonzero interaction channels instead
+   of looping over every `ik, ikp, iq` combination during sparse assembly.
+16. Added a first-class matrix-free Hamiltonian action API.
+   `HamiltonianAction(...)` is now exported and the diagonalization entry points
+   support `matrixfree=true` alongside explicit sparse CSC construction.
+17. Hardened the ED entry points for zero-nonzero sectors.
+   Sparse solves now derive the pointer type from `eltype(row)` instead of
+   assuming `row[1]` exists.
+18. Revalidated the refactored constructor path.
+   `tests/test_list_constructor.jl` and the Hilbert-space regression checks were
+   rerun after the constructor unification.
+19. Added targeted sparse-vs-matrix-free regression coverage.
+   `tests/test_hamiltonian_action.jl` now checks that `HamiltonianAction(v)`
+   matches `SparseMatrixCSC * v` and that sparse and matrix-free eigensolves
+   agree on small 4-index and 6-index momentum-sector problems.
+20. Started Phase 6 by introducing a reusable RDM sector workspace.
+   `DensityMatrices.jl` now builds `RDMWorkspace(...)` objects for spinless and
+   two-band momentum sectors, and the public `RDM1`, `RDM2`, `RDM3`, and
+   `RDM2_cache` entry points are thin wrappers over that prepared workspace.
+21. Consolidated the repeated RDM-side operator application logic.
+   One shared transition helper now applies the fermionic operator strings used
+   by `RDM1`, `RDM2`, `RDM3`, the naive reference paths, and the `RDM2` cache
+   builder instead of each routine carrying its own operator sequence.
+22. Replaced ad hoc RDM tuple generation with reusable momentum filters.
+   Pair and triple momentum-conserving index generation now goes through shared
+   helpers parameterized by orbital-to-momentum mapping, covering both spinless
+   and two-band sectors.
+23. Added structured RDM regression coverage.
+   `tests/test_density_matrix_refactor.jl` checks workspace/public-wrapper
+   equivalence, cache round-tripping, optimized `RDM3` vs single-threaded
+   `RDM3`, and optimized-vs-naive agreement on representative independent RDM2
+   and RDM3 elements in small sectors.
+24. Added compact symmetry-reduced RDM representations.
+   `DensityMatrices.jl` now exposes `RDM2Compact(...)`, `RDM3Compact(...)`, and
+   `todense(...)`, so callers that do not need the full dense tensors can work
+   directly with the independent momentum-filtered elements.
+25. Tightened cache validation for the refactored RDM path.
+   Versioned `RDM2` cache files are now validated against model kind, lattice
+   size, particle number, and momentum before use instead of being accepted
+   blindly.
+26. Finished the Phase 6 public RDM surface.
+   `RDM2(...)` and `RDM3(...)` now support `representation=:dense` or
+   `representation=:compact`, and `EDMain.jl` exports the workspace, compact
+   RDM, and reconstruction APIs directly.
+27. Finished the Phase 3 fermion-kernel cleanup.
+   `FermionOperator.jl` now uses a typed `FermionOperator{T}` state container,
+   exports pure `creation_kernel`, `annihilation_kernel`, and
+   `apply_operator_string` helpers, documents the basis-site reverse mapping via
+   `basis_site_index(...)`, and the Hamiltonian/RDM hot paths now call those
+   pure kernels directly.
+28. Added focused fermion sign-convention tests.
+   `tests/test_fermion_operator.jl` checks reverse-index mapping, pure-kernel
+   parity/occupancy behavior, mutable-vs-pure consistency, and signed-width
+   edge cases near the maximum supported bit positions.
+29. Finished the Phase 5 reusable ED solve pipeline.
+   `EDMain.jl` now exposes explicit model constructors, a `SolverConfig`
+   object, reusable `BuildSector`, `BuildOperator`, `SolveSector`, and
+   `SolveAllSectors` entry points, and the legacy diagonalization wrappers now
+   route through that shared pipeline instead of duplicating sector logic.
+30. Added focused API-regression coverage for the new solve surface.
+   `tests/test_phase5_api.jl` checks the explicit model constructors, reusable
+   sector solving vs legacy wrappers, all-sector iteration, matrix-free parity,
+   two-band vector saving, and the explicit unsupported-path error for the
+   spinful 6-index model family.
+31. Converted exploratory 1D spin-momentum basis inspection into a maintained
+    regression test.
+   `tests/test_hilbert_kspin1d.jl` now checks exact basis contents, fixed-spin
+   counts, per-state momentum labels, and full-sector partitioning in 1D.
+32. Converted the old density-matrix inspection script into maintained
+    assertions.
+   `tests/test_density_matrix.jl` now checks `RDM1` trace conservation, the
+   maintained `RDM2` contraction convention, and Hermiticity of `RDM1`/`RDM2`
+   on a deterministic small-sector state.
+33. Added focused physical-invariant regression tests.
+   `tests/test_physics_invariants.jl` checks that 2D spinless sector states
+   preserve particle number and total momentum, and that representative list
+   and momentum Hamiltonians are Hermitian on small sectors.
+34. Expanded the canonical package test runner.
+   `test/runtests.jl` now includes the 1D spinful Hilbert-space, density-matrix
+   invariant, and physics-invariant regression files in addition to the earlier
+   maintained suite.
+35. Added CI for the maintained package suite.
+   `.github/workflows/ci.yml` now runs `Pkg.instantiate()` and `Pkg.test()` on
+   pushes and pull requests, using the canonical package test entry point.
+36. Finished the Phase 1 basis-space namespace cleanup.
+   `BasisSpaces.jl` now provides the canonical namespace for all Hilbert-space
+   types, shared momentum helpers, `build_hilbert!(...)`, and
+   `state_index_map(...)`, so callers no longer need to reach through the
+   individual low-level Hilbert-space modules.
+37. Separated the package-facing API from the internal implementation module.
+   `JuED.jl` now imports and exports the public API explicitly, exports
+   `BasisSpaces`, and no longer exports `EDMod` as part of the intended package
+   surface, while keeping `JuED.EDMod` accessible for compatibility.
+38. Standardized the Hilbert-space module exports and mutation behavior.
+   The internal Hilbert-space modules now export their primary type/builder
+   consistently, and `SpinHilbertSpace.BuildSpinHilbert(...)` now updates the
+   stored `hilbert` field like the other basis builders.
+39. Added package-level Phase 1 namespace regression coverage.
+   `tests/test_phase1_namespace.jl` checks the new `JuED.BasisSpaces` export,
+   verifies that `EDMod` is no longer exported from the package surface, and
+   exercises the unified basis builders and state-index mapping through the new
+   namespace.
+
+Still pending:
+
+1. Broader public/internal API cleanup in `EDMain.jl`, especially reducing the
+   repetition across the diagonalization entry points.
+2. Phase 6 follow-up beyond the workspace/kernel consolidation, especially
+   a more scalable on-disk format for large compact RDM objects and any later
+   API ergonomics around those compact representations.
+3. Phase 7 benchmark and allocation work.
+
+## Phase 0: Package and Repository Hygiene
+
+1. Add a standard `Project.toml` and package metadata. Completed.
+   The repository now has a package entry point at `src/JuED.jl`, explicit
+   dependencies in `Project.toml`, and a checked-in `Manifest.toml` for
+   reproducible local development.
+2. Create a single test entry point under Julia's standard `test/` layout, or
+   standardize the existing `tests/` folder with a master runner. Completed.
+   `test/runtests.jl` is now the canonical package test runner, and the
+   maintained regression files can be run both directly and through `Pkg.test`.
+3. Define development dependencies explicitly, including `KrylovKit`,
+   `ProgressMeter`, `JLD2`, and any benchmarking tools. Completed for the
+   current maintained suite.
+   The active package environment now declares the runtime and test
+   dependencies needed by the maintained regression tests. Benchmarking tools
+   can be added later as part of Phase 7 rather than the baseline package
+   setup.
+4. Add a short contributor note that explains the expected package workflow,
+   test commands, and performance-check workflow. Completed.
+   `README.md` and `CONTRIBUTING.md` now describe installation, the preferred
+   public API, the canonical test command, and the distinction between the
+   package suite and older exploratory scripts in `tests/`.
+
+### Deliverables
+
+- Standard package metadata. Completed.
+- Reproducible environment setup. Completed.
+- One command to run the whole test suite. Completed.
+
+## Phase 1: Module Boundary Cleanup
+
+1. Resolve the duplicate `MomentumHilbertSpace2DMod` definitions. Completed.
+   Choose one implementation path:
+   - keep a cached implementation as the default and delete the duplicate file,
+     or
+   - rename the cached variant to a distinct module and make the choice explicit
+     in the API.
+2. Consolidate repeated momentum utility functions into one shared utility
+   module. Completed for the 1D/2D momentum helpers.
+3. Move all basis-space types into a single namespace with consistent exports.
+   Completed.
+   `BasisSpaces.jl` now provides the canonical basis-space namespace and
+   builders, and the maintained Hilbert-space tests target that namespace
+   instead of the individual implementation modules.
+4. Separate public entry points from internal implementation modules.
+   Completed for the current package surface.
+   `JuED.jl` now explicitly imports/exports the intended package API and
+   exports `BasisSpaces`, while the lower-level `EDMod` module remains
+   accessible but is no longer exported as part of the public package surface.
+
+### Deliverables
+
+- No duplicate module names. Completed.
+- One source of truth for momentum arithmetic. Completed.
+- Clear internal vs public API boundaries. Completed for the current package
+  surface.
+
+### Phase 1 Follow-Up
+
+Phase 1 is complete for the current namespace and package-boundary scope.
+The remaining related work now belongs to later phases:
+
+1. Broader ED API ergonomics belong to Phase 5.
+2. Performance-oriented benchmark and allocation work belongs to Phase 7.
+
+## Phase 2: Basis Generation Unification
+
+1. Introduce a shared basis-generation engine parameterized by: Completed.
+   - orbital count
+   - particle count
+   - momentum constraint
+   - bit layout strategy
+2. Replace the repeated DFS implementations in: Completed for the current
+   Hilbert-space files.
+   - `HilbertSpace.jl`
+   - `MomentumHilbertSpace1D.jl`
+   - `MomentumHilbertSpace2D.jl`
+   - `SpinHilbertSpace.jl`
+   - `SpinMomentumHilbertSpace1D.jl`
+   - `SpinMomentumHilbertSpace2D.jl`
+   - `TwoBandMomentumHilbertSpace2D.jl`
+3. Make caching a configurable feature of the basis builder instead of a
+   separate shadow implementation. Completed.
+   The shadow implementation was removed, memoization lives in the shared basis
+   builder, and `use_cache=true/false` is now exposed in the shared/public basis
+   builder APIs.
+4. Introduce a dedicated state-index type alias and enforce the same type across
+   Hilbert spaces, dictionaries, and sparse rows. Completed for the current
+   basis/setup layer.
+   State-width and pointer-width selection go through shared helpers, `ToDict`
+   can build typed index maps, the sparse constructors use shared pointer
+   helpers, and the Phase 2 RDM/cache collections now use explicit tuple/index
+   types.
+
+### Deliverables
+
+- One generalized DFS basis builder
+- Explicit cache policy
+- Consistent state/index typing
+
+### Phase 2 Follow-Up
+
+Phase 2 is complete for the basis-generation and sector-typing scope.
+The remaining follow-up items now belong to later phases:
+
+1. Further RDM redesign belongs to Phase 6.
+2. Broader sparse-assembly cleanup belongs to Phase 4.
+3. Package/test-runner standardization belongs to Phase 0.
+
+## Phase 3: Fermion Operator Kernel Cleanup
+
+1. Generalize `FermionOperator` over the state integer type instead of hardcoding
+   `Int64`. Completed.
+2. Separate pure operator kernels from mutable convenience wrappers. Completed.
+3. Add micro-tests for creation/annihilation parity, occupancy checks, and
+   corner cases near the maximum supported bit width. Completed.
+4. Document the basis ordering convention and reverse-index mapping currently
+   embedded throughout the code. Completed.
+
+### Deliverables
+
+- Typed fermion operator kernel
+- Explicit basis-ordering documentation
+- Unit tests for sign conventions
+
+### Phase 3 Follow-Up
+
+Phase 3 is complete for the current fermion-kernel scope.
+The remaining related work now belongs to later phases:
+
+1. Broader API cleanup and naming ergonomics belong to Phase 5.
+2. Allocation and benchmarking work belongs to Phase 7.
+
+## Phase 4: Hamiltonian Construction Refactor
+
+1. Extract a generic sparse-column assembly engine with a model-specific callback
+   for generating connected states. Completed.
+2. Remove duplicated two-pass CSC construction logic between the 4-index and
+   6-index interaction paths. Completed.
+3. Precompute reusable operator index maps for momentum-conserving scattering
+   channels. Completed for the momentum constructor path.
+4. Remove `ProgressMeter` calls from hot threaded loops or gate them behind a
+   debug/performance flag. Completed for the constructor hot loops.
+5. Audit integer conversions so `row`, `indptr`, and dictionary indices use one
+   consistent type. Completed for the constructor and diagonalization paths.
+6. Add a matrix-free Hamiltonian application path as a first-class API alongside
+   explicit sparse construction, based on the pattern already explored in the
+   vector-product tests. Completed.
+
+### Deliverables
+
+- One Hamiltonian assembly framework
+- Optional matrix-free action for large sectors
+- Reduced allocation pressure in hot loops
+
+### Phase 4 Follow-Up
+
+Phase 4 is complete for the Hamiltonian-construction scope.
+The remaining related work now belongs to later phases:
+
+1. Further matrix-free solver ergonomics belong to Phase 5.
+2. Additional low-level performance tuning belongs to Phase 7.
+3. RDM-side operator-kernel consolidation belongs to Phase 6.
+
+## Phase 5: Public API Simplification
+
+1. Replace overload-heavy `InputModel` construction with explicit model types or
+   constructors that make the interaction representation obvious. Completed.
+   `SpinlessListModel`, `SpinlessMomentumModel`, `SpinfulListModel`,
+   `SpinfulMomentumModel`, and `TwoBandModel` are now exported as explicit
+   constructors, while `InputModel` remains as a backward-compatible wrapper.
+2. Split "build basis", "build Hamiltonian", and "solve" into separately callable
+   steps. Completed.
+   `BuildSector`, `BuildOperator`, `SolveSector`, and `SolveAllSectors` now form
+   the reusable public pipeline.
+3. Introduce a solver configuration object for tolerances, number of eigenpairs,
+   return-vectors behavior, and sparse vs matrix-free mode. Completed.
+   `SolverConfig` now carries the eigensolver settings instead of scattering
+   them across each diagonalization entry point.
+4. Make sector iteration reusable for all model families rather than duplicating
+   `DiagonalizeAllMomentum` loops. Completed for the currently supported model
+   families.
+
+### Deliverables
+
+- Smaller, more explicit API surface
+- Reusable sector solver pipeline
+- Clear configuration semantics
+
+### Phase 5 Follow-Up
+
+Phase 5 is complete for the current public-API simplification scope.
+The remaining related work now belongs to later phases:
+
+1. Broader package/test-runner cleanup belongs to Phase 0.
+2. Benchmarking and allocation tuning belong to Phase 7.
+3. Additional unsupported model-family coverage can be added later if new
+   Hamiltonian builders are introduced.
+
+## Phase 6: Density Matrix Redesign
+
+1. Stop rebuilding Hilbert spaces inside every RDM call. Completed for the
+   current spinless and two-band 2D RDM paths.
+   `RDMWorkspace(...)` now prepares and reuses the sector basis, index map, and
+   momentum-filtered operator tuples, and the public `RDM*` entry points call
+   into that prepared workspace.
+2. Factor out the shared operator-application pattern used by `RDM1`, `RDM2`,
+   `RDM3`, and cache generation. Completed for the current RDM subsystem.
+   The duplicated fermion-operator loops were collapsed into shared transition
+   helpers. The underlying typed fermion-kernel cleanup was completed in
+   Phase 3 and no longer blocks the RDM subsystem.
+3. Replace ad hoc tuple-generation code with reusable momentum-filter utilities.
+   Completed for the current spinless and two-band 2D RDM paths.
+4. Make caching a structured subsystem with explicit filenames, schema versioning,
+   and invalidation rules. Completed for `RDM2`.
+   `RDM2_cache` now writes a versioned filename and metadata payload, validates
+   metadata before loading, and still accepts the legacy cache layout for
+   compatibility.
+5. Re-evaluate dense tensor outputs for `RDM2` and `RDM3`. Completed for the
+   current public API.
+   `RDM2(...)` and `RDM3(...)` now support `representation=:compact`, and the
+   dense methods are implemented as `todense(...)` over the compact symmetry-
+   reduced data.
+   For larger systems, expose sparse or symmetry-reduced representations to avoid
+   allocating full `norb^4` and `norb^6` tensors when they are not needed.
+6. Add correctness tests that compare optimized RDM code to naive reference
+   implementations on small systems. Completed for the current RDM scope.
+   The new regression suite covers workspace-vs-wrapper agreement, cache
+   validation failure, compact-vs-dense reconstruction, cache round-tripping,
+   threaded-vs-single-threaded `RDM3`, public `representation=:compact`
+   coverage, and optimized-vs-naive
+   checks on representative independent RDM2/RDM3 elements.
+
+### Phase 6 Follow-Up
+
+Phase 6 is complete for the current RDM architecture scope.
+The remaining related work now belongs to later phases:
+
+1. Larger benchmark and allocation work belongs to Phase 7.
+2. Broader API cleanup and naming ergonomics belong to Phase 5.
+
+### Deliverables
+
+- Shared RDM engine
+- Reusable cache format
+- Lower memory footprint for higher-body density matrices
+
+## Phase 7: Performance and Memory Work
+
+1. Add `BenchmarkTools` benchmarks for:
+   - Hilbert-space generation
+   - Hamiltonian assembly
+   - sparse eigensolve
+   - matrix-free eigensolve
+   - `RDM1`, `RDM2`, and `RDM3`
+2. Profile allocations in the operator kernels and sparse assembly loops.
+3. Preallocate reusable thread-local workspaces for repeated operator
+   applications.
+4. Replace repeated `Dict` lookups with denser indexing structures where sector
+   ordering makes that possible.
+5. Define target problem sizes and record expected runtime and memory envelopes.
+
+### Deliverables
+
+- Benchmark suite
+- Allocation profile baselines
+- Performance targets for future changes
+
+## Phase 8: Testing and Verification
+
+1. Convert the existing exploratory scripts into structured tests with
+   assertions. Completed for the current maintained suite.
+   The old 1D spin-momentum basis inspection and density-matrix inspection
+   scripts were converted into maintained regression files with explicit
+   assertions and package-compatible loading.
+2. Add cross-checks between:
+   - sparse Hamiltonian vs matrix-free action
+   - cached vs uncached basis generation
+   - optimized RDMs vs naive RDMs
+   - old API outputs vs refactored API outputs on small systems
+   Completed for the current maintained suite.
+3. Add regression tests for hermiticity, particle-number conservation, and
+   momentum-sector consistency. Completed for representative small sectors.
+4. Add CI for the test suite and, if runtime permits, a small benchmark smoke
+   test. Completed for the test-suite CI path.
+   GitHub Actions now runs the canonical package suite. Benchmark smoke tests
+   remain better aligned with Phase 7 once the benchmark harness exists.
+
+### Deliverables
+
+- Reproducible correctness coverage. Completed for the current maintained suite.
+- Regression protection for future optimization work. Completed for the current
+  maintained suite.
+
+### Phase 8 Follow-Up
+
+Phase 8 is complete for the current maintained test and CI scope.
+The remaining related work now belongs to later phases:
+
+1. Benchmark smoke tests belong to Phase 7.
+2. Additional exploratory model/data scripts can be promoted if they become
+   stable and dependency-light enough for the maintained suite.
+
+## Recommended Execution Order
+
+1. Phase 0
+2. Phase 1
+3. Phase 2
+4. Phase 3
+5. Phase 4
+6. Phase 5
+7. Phase 6
+8. Phase 8
+9. Phase 7
+
+Performance work should start only after the architectural duplication is
+removed, otherwise profiling results will be noisy and the same optimization
+will have to be repeated in several places.
+
+## Immediate First Refactors
+
+These are the highest-leverage changes to start with:
+
+1. Remove the duplicate 2D momentum module definitions. Completed.
+2. Standardize the package structure and test entry point. Completed.
+3. Unify the DFS basis builders behind one generic implementation.
+4. Normalize integer and container types across basis states and sparse data.
+5. Extract shared Hamiltonian assembly scaffolding.
+6. Redesign RDM code around a cached sector workspace.
+
+## Success Criteria
+
+The refactor program is complete when:
+
+1. The project has one clear package structure and one canonical module graph.
+2. Shared basis-generation and Hamiltonian code paths replace the existing
+   duplicated variants.
+3. Public APIs express models, sectors, and solver settings explicitly.
+4. Small-system results are unchanged relative to the current implementation.
+5. Large-system runs allocate less memory and complete faster in the main hot
+   paths.
+6. Benchmarks and tests catch both correctness and performance regressions.

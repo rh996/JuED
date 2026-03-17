@@ -1,361 +1,234 @@
-
-
-
 module EDMod
 
 include("ModelTypes.jl")
 using .ModelTypesMod
 
+include("MomentumUtils.jl")
+include("BasisBuilders.jl")
+include("IndexTypes.jl")
 include("FermionOperator.jl")
 include("HilbertSpace.jl")
-include("MomentumHilbertSpace2D_cache.jl")
 include("SpinMomentumHilbertSpace2D.jl")
 include("SpinMomentumHilbertSpace1D.jl")
 include("MomentumHilbertSpace2D.jl")
 include("MomentumHilbertSpace1D.jl")
 include("SpinHilbertSpace.jl")
 include("TwoBandMomentumHilbertSpace2D.jl")
+include("BasisSpaces.jl")
 include("HamiltonianConstructor.jl")
 include("DensityMatrices.jl")
 
-export DiagonalizeOneMomentum, InputModel, DiagonalizeAllMomentum
+export DiagonalizeOneMomentum, InputModel, InputTwoBandModel, DiagonalizeAllMomentum, HamiltonianAction
+export SpinlessListModel, SpinlessMomentumModel, SpinfulListModel, SpinfulMomentumModel, TwoBandModel
+export SolverConfig, BuildSector, BuildOperator, SolveSector, SolveAllSectors
+export RDMWorkspace, CompactRDM2, CompactRDM3, RDM1, RDM2, RDM3, RDM2Compact, RDM3Compact, RDM2_cache, todense
+export BasisSpaces
 
 using .HamiltonianConstructorMod
 using .DensityMatricesMod
+const BasisSpaces = BasisSpacesMod
 
 using SparseArrays
 using KrylovKit
-using .MomentumHilbertSpace2DMod
-using .MomentumHilbertSpace1DMod
-using .SpinMomentumHilbertSpace2DMod
-using .SpinMomentumHilbertSpace1DMod
-using .SpinHilbertSpaceMod
-using .TwoBandMomentumHilbertSpace2DMod
+using .BasisSpacesMod
+using .IndexTypesMod: choose_state_type
 
-
-function InputModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T}
-    return ModelParams2DSpinlessList{T}(nparticle, Nkx, Nky, OneBody, TwoBody)
+struct SolverConfig
+    neigen::Int
+    return_vectors::Int
+    matrixfree::Bool
+    tol::Float64
+    maxiter::Int
+    which::Symbol
+    ishermitian::Bool
 end
 
-
-function InputModel(nalpha::Int, nbeta::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T}
-    return ModelParams2DSpinList{T}(nalpha, nbeta, Nkx, Nky, OneBody, TwoBody)
+function SolverConfig(
+    neigen::Int;
+    return_vectors::Int=1,
+    matrixfree::Bool=false,
+    tol::Real=1e-6,
+    maxiter::Int=1000,
+    which::Symbol=:SR,
+    ishermitian::Bool=true,
+)
+    return SolverConfig(neigen, return_vectors, matrixfree, Float64(tol), maxiter, which, ishermitian)
 end
 
-function InputModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,6}) where {T}
-    return ModelParams2DSpinless{T}(nparticle, Nkx, Nky, OneBody, TwoBody)
+SpinlessListModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T} =
+    ModelParams2DSpinlessList{T}(nparticle, Nkx, Nky, OneBody, TwoBody)
+
+SpinfulListModel(nalpha::Int, nbeta::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T} =
+    ModelParams2DSpinList{T}(nalpha, nbeta, Nkx, Nky, OneBody, TwoBody)
+
+SpinlessMomentumModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,6}) where {T} =
+    ModelParams2DSpinless{T}(nparticle, Nkx, Nky, OneBody, TwoBody)
+
+SpinfulMomentumModel(nalpha::Int, nbeta::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,6}) where {T} =
+    ModelParams2DSpin{T}(nalpha, nbeta, Nkx, Nky, OneBody, TwoBody)
+
+TwoBandModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T} =
+    ModelParams2DTwoBand{T}(nparticle, Nkx, Nky, OneBody, TwoBody)
+
+InputModel(args...) = _input_model(args...)
+_input_model(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T} =
+    SpinlessListModel(nparticle, Nkx, Nky, OneBody, TwoBody)
+_input_model(nalpha::Int, nbeta::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T} =
+    SpinfulListModel(nalpha, nbeta, Nkx, Nky, OneBody, TwoBody)
+_input_model(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,6}) where {T} =
+    SpinlessMomentumModel(nparticle, Nkx, Nky, OneBody, TwoBody)
+_input_model(nalpha::Int, nbeta::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,6}) where {T} =
+    SpinfulMomentumModel(nalpha, nbeta, Nkx, Nky, OneBody, TwoBody)
+
+InputTwoBandModel(nparticle::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T} =
+    TwoBandModel(nparticle, Nkx, Nky, OneBody, TwoBody)
+
+@inline _sector_count(model) = model.Nkx * model.Nky
+@inline _model_value_type(model) = eltype(model.OneBody)
+
+@inline _state_bits(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinless}) = model.Nkx * model.Nky
+@inline _state_bits(model::Union{ModelParams2DSpinList,ModelParams2DTwoBand}) = model.Nkx * model.Nky * 2
+
+function BuildSector(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinless}, momentum::Int; use_cache::Bool=true)
+    indtype = choose_state_type(_state_bits(model))
+    hilbertspace = BasisSpaces.MomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
+    return hilbertspace
 end
 
-function InputModel(nalpha::Int, nbeta::Int, Nkx::Int, Nky::Int, OneBody::Array{T,2}, TwoBody::Array{T,6}) where {T}
-    return ModelParams2DSpin{T}(nalpha, nbeta, Nkx, Nky, OneBody, TwoBody)
+function BuildSector(model::ModelParams2DSpinList, momentum::Int; use_cache::Bool=true)
+    indtype = choose_state_type(_state_bits(model))
+    hilbertspace = BasisSpaces.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
+    return hilbertspace
 end
-function InputTwoBandModel(nparticle, Nkx, Nky, OneBody::Array{T,2}, TwoBody::Array{T,4}) where {T}
-    return ModelParams2DTwoBand{T}(nparticle, Nkx, Nky, OneBody, TwoBody)
+
+function BuildSector(model::ModelParams2DSpin, momentum::Int; use_cache::Bool=true)
+    indtype = choose_state_type(model.Nkx * model.Nky * 2)
+    hilbertspace = BasisSpaces.SpinMomentumHilbertSpace2D{indtype}(model.nalpha, model.nbeta, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
+    return hilbertspace
 end
 
+function BuildSector(model::ModelParams2DTwoBand, momentum::Int; use_cache::Bool=true)
+    indtype = choose_state_type(_state_bits(model))
+    hilbertspace = BasisSpaces.TwoBandMomentumHilbertSpace2D{indtype}(model.nparticle, model.Nkx, model.Nky, momentum, indtype[])
+    BasisSpaces.build_hilbert!(hilbertspace; use_cache)
+    return hilbertspace
+end
 
-function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T}, momentum::Int, neigenv::Int; returnvectors::Int=1) where {T}
-
-    nparticle = ModelParams2DSpinless.nparticle
-    Nkx = ModelParams2DSpinless.Nkx
-    Nky = ModelParams2DSpinless.Nky
-    OneBody = ModelParams2DSpinless.OneBody
-    TwoBody = ModelParams2DSpinless.TwoBody
-
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
+function BuildOperator(model::ModelParams2DSpinless, hilbertspace; matrixfree::Bool=false)
+    if matrixfree
+        return HamiltonianAction(model.OneBody, model.TwoBody, hilbertspace)
     end
+    data, row, indptr, dim = Hamiltonian_momentum_constructor(model.OneBody, model.TwoBody, hilbertspace)
+    pointertype = eltype(row)
+    operator = SparseMatrixCSC{eltype(model.OneBody),pointertype}(dim, dim, indptr, row, data)
+    return operator, dim
+end
 
-
-    hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
-    hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
-
-    data, row, indptr, dim = Hamiltonian_momentum_constructor(OneBody, TwoBody, hilbertspace)
-
-    @show dim
-
-    if neigenv > dim
-        neigenv = dim
+function BuildOperator(model::Union{ModelParams2DSpinlessList,ModelParams2DSpinList,ModelParams2DTwoBand}, hilbertspace; matrixfree::Bool=false)
+    if matrixfree
+        return HamiltonianAction(model.OneBody, model.TwoBody, hilbertspace)
     end
+    data, row, indptr, dim = Hamiltonian_list_constructor(model.OneBody, model.TwoBody, hilbertspace)
+    pointertype = eltype(row)
+    operator = SparseMatrixCSC{eltype(model.OneBody),pointertype}(dim, dim, indptr, row, data)
+    return operator, dim
+end
 
-    pointertype = typeof(row[1])
-    vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
+function BuildOperator(model::ModelParams2DSpin, hilbertspace; matrixfree::Bool=false)
+    throw(ArgumentError("Spinful 6-index models are not yet supported by the reusable ED solve pipeline."))
+end
 
+function _build_sector_problem(model, momentum::Int, config::SolverConfig; use_cache::Bool=true)
+    hilbertspace = BuildSector(model, momentum; use_cache)
+    operator, dim = BuildOperator(model, hilbertspace; matrixfree=config.matrixfree)
+    return (; momentum, hilbertspace, operator, dim, matrixfree=config.matrixfree)
+end
+
+function _solve_operator(operator::SparseMatrixCSC, dim::Int, config::SolverConfig)
+    return eigsolve(operator, dim, config.neigen, config.which; maxiter=config.maxiter, tol=config.tol, ishermitian=config.ishermitian)
+end
+
+function _solve_operator(action, dim::Int, config::SolverConfig)
+    return eigsolve(action, dim, config.neigen, config.which; maxiter=config.maxiter, tol=config.tol, ishermitian=config.ishermitian)
+end
+
+function SolveSector(model, momentum::Int, config::SolverConfig=SolverConfig(1); use_cache::Bool=true)
+    problem = _build_sector_problem(model, momentum, config; use_cache)
+    dim = problem.dim
+    nreq = min(config.neigen, dim)
+    if nreq == 0
+        empty_values = Vector{_model_value_type(model)}()
+        vectors = config.return_vectors == 0 ? nothing : Any[]
+        return (; momentum, dim, values=empty_values, vectors, info=nothing, hilbertspace=problem.hilbertspace)
+    end
+    vals, vecs, info = _solve_operator(problem.operator, dim, SolverConfig(nreq; return_vectors=config.return_vectors, matrixfree=config.matrixfree, tol=config.tol, maxiter=config.maxiter, which=config.which, ishermitian=config.ishermitian))
+    vectors = config.return_vectors == 0 ? nothing : vecs[1:min(config.return_vectors, length(vecs))]
+    return (; momentum, dim, values=vals[1:nreq], vectors, info, hilbertspace=problem.hilbertspace)
+end
+
+function SolveAllSectors(model, config::SolverConfig=SolverConfig(1); use_cache::Bool=true)
+    results = Vector{Any}(undef, _sector_count(model))
+    for (ind, momentum) in enumerate(0:(_sector_count(model) - 1))
+        results[ind] = SolveSector(model, momentum, config; use_cache)
+    end
+    return results
+end
+
+@inline _nan_fill(::Type{T}) where {T<:Real} = T(NaN)
+@inline _nan_fill(::Type{Complex{T}}) where {T<:Real} = Complex{T}(NaN, NaN)
+
+function _stack_sector_values(results, neigen::Int)
+    T = promote_type(map(result -> eltype(result.values), results)...)
+    matrix = fill(_nan_fill(T), neigen, length(results))
+    for (col, result) in enumerate(results)
+        matrix[1:length(result.values), col] = result.values
+    end
+    return matrix
+end
+
+function _saved_vectors(results)
+    mocoeffs = Dict{Int,Matrix}()
+    for result in results
+        result.vectors === nothing && continue
+        mocoeffs[result.momentum] = hcat(result.vectors...)
+    end
+    return mocoeffs
+end
+
+function DiagonalizeOneMomentum(model::Union{ModelParams2DSpinless,ModelParams2DSpinlessList,ModelParams2DSpinList,ModelParams2DTwoBand}, momentum::Int, neigenv::Int; returnvectors::Int=1, matrixfree::Bool=false)
+    result = SolveSector(model, momentum, SolverConfig(neigenv; return_vectors=returnvectors, matrixfree))
     if returnvectors == 0
-        return vals[1:neigenv]
-
-    else
-        return vals[1:neigenv], vecs[1:returnvectors]
+        return result.values
     end
-
-
+    return result.values, result.vectors
 end
 
-
-function DiagonalizeOneMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList{T}, momentum::Int, neigenv::Int; returnvectors::Int=1) where {T}
-
-    nparticle = ModelParams2DSpinless.nparticle
-    Nkx = ModelParams2DSpinless.Nkx
-    Nky = ModelParams2DSpinless.Nky
-    OneBody = ModelParams2DSpinless.OneBody
-    TwoBody = ModelParams2DSpinless.TwoBody
-
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
-
-
-    hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, momentum, [])
-    hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
-
-    data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
-
-    @show dim
-
-    if neigenv > dim
-        neigenv = dim
-    end
-
-    pointertype = typeof(row[1])
-    println("pointertype", pointertype)
-    vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
-    @show info
-    if returnvectors == 0
-        return vals[1:neigenv]
-
-    else
-        return vals, vecs[1:returnvectors]
-    end
-
-
+function DiagonalizeAllMomentum(model::Union{ModelParams2DSpinless,ModelParams2DSpinList}, neigenv::Int; matrixfree::Bool=false)
+    results = SolveAllSectors(model, SolverConfig(neigenv; return_vectors=0, matrixfree))
+    return _stack_sector_values(results, neigenv)
 end
 
-
-function DiagonalizeOneMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, momentum::Int, neigenv::Int; returnvectors::Int=1) where {T}
-
-    nalpha = ModelParams2DSpin.nalpha
-    nbeta = ModelParams2DSpin.nbeta
-    Nkx = ModelParams2DSpin.Nkx
-    Nky = ModelParams2DSpin.Nky
-    OneBody = ModelParams2DSpin.OneBody
-    TwoBody = ModelParams2DSpin.TwoBody
-
-    if Nkx * Nky * 2 > 31
-        indtype = Int64
-    else
-        indtype = Int32
+function DiagonalizeAllMomentum(model::ModelParams2DSpinlessList, neigenv::Int; numer_of_vectors::Int=3, save::Bool=false, matrixfree::Bool=false)
+    return_vectors = save ? numer_of_vectors : 0
+    results = SolveAllSectors(model, SolverConfig(neigenv; return_vectors, matrixfree))
+    elist = _stack_sector_values(results, neigenv)
+    if save
+        return elist, _saved_vectors(results)
     end
-
-
-    hilbertspace = SpinMomentumHilbertSpace2DMod.SpinMomentumHilbertSpace2D{indtype}(nalpha, nbeta, Nkx, Nky, momentum, [])
-    SpinMomentumHilbertSpace2DMod.BuildSpinHilbert(hilbertspace)
-
-    data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
-
-    @show dim
-
-    if neigenv > dim
-        neigenv = dim
-    end
-
-    pointertype = typeof(row[1])
-    vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
-
-    if returnvectors == 0
-        return vals[1:neigenv]
-
-    else
-        return vals[1:neigenv], vecs[1:returnvectors]
-    end
-
-
-end
-
-
-
-
-
-function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinless{T}, neigenv::Int) where {T}
-    nparticle = ModelParams2DSpinless.nparticle
-    Nkx = ModelParams2DSpinless.Nkx
-    Nky = ModelParams2DSpinless.Nky
-    OneBody = ModelParams2DSpinless.OneBody
-    TwoBody = ModelParams2DSpinless.TwoBody
-
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
-
-
-    elist = []
-    for k in 0:Nkx*Nky-1
-        hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, k, [])
-        hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
-
-        data, row, indptr, dim = Hamiltonian_momentum_constructor(OneBody, TwoBody, hilbertspace)
-
-        @show dim
-
-        if neigenv > dim
-            neigenv = dim
-        end
-        # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
-
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,Int32}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
-        # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
-        push!(elist, vals[1:neigenv])
-
-    end
-    elist = hcat(elist...)
-
-
     return elist
 end
 
-
-function DiagonalizeAllMomentum(ModelParams2DSpinless::ModelParams2DSpinlessList{T}, neigenv::Int; numer_of_vectors=3, save=false) where {T}
-    nparticle = ModelParams2DSpinless.nparticle
-    Nkx = ModelParams2DSpinless.Nkx
-    Nky = ModelParams2DSpinless.Nky
-    OneBody = ModelParams2DSpinless.OneBody
-    TwoBody = ModelParams2DSpinless.TwoBody
-
-    if Nkx * Nky > 31
-        indtype = Int64
-    else
-        indtype = Int32
+function DiagonalizeAllMomentum(model::ModelParams2DTwoBand, neigenv::Int; numer_of_vectors::Int=1, save::Bool=false, matrixfree::Bool=false)
+    return_vectors = save ? numer_of_vectors : 0
+    results = SolveAllSectors(model, SolverConfig(neigenv; return_vectors, matrixfree))
+    elist = _stack_sector_values(results, neigenv)
+    if save
+        return elist, _saved_vectors(results)
     end
-
-
-
-
-
-    elist = []
-    mocoeffs = Dict()
-    for k in 0:Nkx*Nky-1
-        hilbertspace = MomentumHilbertSpace2DMod.MomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, k, [])
-        hilbert = MomentumHilbertSpace2DMod.BuildHilbert(hilbertspace)
-
-        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
-        # println("Total memory consumption: ", (Base.summarysize(data)+Base.summarysize(row)+Base.summarysize(indptr))/1024^2, " MB")
-        @show dim
-
-        if neigenv > dim
-            neigenv = dim
-        end
-        # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
-        pointertype = typeof(row[1])
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
-        # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
-        push!(elist, vals[1:neigenv])
-        if save == true
-            mocoeffs[k] = hcat(vecs[1:numer_of_vectors]...)
-        end
-
-    end
-    elist = hcat(elist...)
-
-    if save == true
-        return elist, mocoeffs
-    else
-        return elist
-    end
-end
-
-
-function DiagonalizeAllMomentum(ModelParams2DSpin::ModelParams2DSpinList{T}, neigenv::Int) where {T}
-    nalpha = ModelParams2DSpin.nalpha
-    nbeta = ModelParams2DSpin.nbeta
-    Nkx = ModelParams2DSpin.Nkx
-    Nky = ModelParams2DSpin.Nky
-    OneBody = ModelParams2DSpin.OneBody
-    TwoBody = ModelParams2DSpin.TwoBody
-
-    if Nkx * Nky * 2 > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
-
-
-
-
-
-    elist = []
-    for k in 0:Nkx*Nky-1
-        hilbertspace = SpinMomentumHilbertSpace2DMod.SpinMomentumHilbertSpace2D{indtype}(nalpha, nbeta, Nkx, Nky, k, [])
-        SpinMomentumHilbertSpace2DMod.BuildSpinHilbert(hilbertspace)
-
-        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
-
-        @show dim
-
-        if neigenv > dim
-            neigenv = dim
-        end
-        # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
-        pointertype = typeof(row[1])
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
-        # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
-        push!(elist, vals[1:neigenv])
-
-    end
-    elist = hcat(elist...)
-
-
     return elist
 end
-
-
-function DiagonalizeAllMomentum(ModelParams2DTwoBand::ModelParams2DTwoBand{T}, neigenv::Int; numer_of_vectors=1, save=false) where {T}
-    nparticle = ModelParams2DTwoBand.nparticle
-    Nkx = ModelParams2DTwoBand.Nkx
-    Nky = ModelParams2DTwoBand.Nky
-    OneBody = ModelParams2DTwoBand.OneBody
-    TwoBody = ModelParams2DTwoBand.TwoBody
-
-    if Nkx * Nky * 2 > 31
-        indtype = Int64
-    else
-        indtype = Int32
-    end
-    elist = []
-    mocoeffs = Dict()
-    for k in 0:Nkx*Nky-1
-        hilbertspace = TwoBandMomentumHilbertSpace2DMod.TwoBandMomentumHilbertSpace2D{indtype}(nparticle, Nkx, Nky, k, [])
-        TwoBandMomentumHilbertSpace2DMod.BuildTwoBandHilbert(hilbertspace)
-
-        data, row, indptr, dim = Hamiltonian_list_constructor(OneBody, TwoBody, hilbertspace)
-
-        @show dim
-
-        if neigenv > dim
-            neigenv = dim
-        end
-        # vals,vecs = eigs(SparseMatrixCSC{Float64,Int32}(dim, dim, indptr, row, data), nev=5, which=:SR)
-        pointertype = typeof(row[1])
-        vals, vecs, info = eigsolve(SparseMatrixCSC{T,pointertype}(dim, dim, indptr, row, data), dim, neigenv, :SR; maxiter=1000, tol=1e-6, ishermitian=true)
-        # vals, vecs, info = eigsolve(SparseMatrixCSC{ComplexF64,Int32}(dim, dim, indptr, row, data),ones(ComplexF64,dim),10,:SR, Lanczos())
-        push!(elist, vals[1:neigenv])
-        if save == true
-            mocoeffs[k] = hcat(vecs[1:numer_of_vectors]...)
-        end
-
-    end
-    elist = hcat(elist...)
-
-    if save == true
-        return elist, mocoeffs
-    else
-        return elist
-    end
-end
-
 
 end
